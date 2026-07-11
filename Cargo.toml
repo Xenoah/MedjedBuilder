@@ -1,0 +1,32 @@
+[package]
+name = "html2apk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Offline HTML folder to Android APK builder"
+build = "build.rs"
+
+[dependencies]
+anyhow = "1"
+apksig = "0.4"
+base64 = "0.22"
+dirs = "6"
+eframe = "0.31"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+rand = "0.8"
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
+rfd = "0.15"
+rsa = { version = "0.9", features = ["pem", "sha2"] }
+rustls-pki-types = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+walkdir = "2"
+zip = { version = "0.6.6", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ja">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Html2Apk test</title>
+<body>
+  <button id="save">保存テスト</button>
+  <pre id="result"></pre>
+  <script>
+    save.onclick = async () => {
+      await H2A.writeText("test/hello.txt", "Hello from Html2Apk");
+      result.textContent = await H2A.readText("test/hello.txt");
+    };
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,9 @@
+/target/
+/template/template.apk
+/template/android/.gradle/
+/template/android/app/build/
+*.unsigned.apk
+*.apk.tmp
+Html2Apk-Windows-x64.zip
+THIRD_PARTY_LICENSES.html
+

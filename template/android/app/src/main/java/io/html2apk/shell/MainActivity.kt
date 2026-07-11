@@ -1,0 +1,469 @@
+package io.html2apk.shell
+
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.provider.Settings
+import android.util.Base64
+import android.webkit.GeolocationPermissions
+import android.webkit.JavascriptInterface
+import android.webkit.MimeTypeMap
+import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.view.View
+import android.view.WindowManager
+import androidx.documentfile.provider.DocumentFile
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.PBEKeySpec
+
+class MainActivity : Activity() {
+    lateinit var webView: WebView
+        private set
+    lateinit var config: JSONObject
+        private set
+    private var fileChooser: ValueCallback<Array<Uri>>? = null
+    private var pendingCapability: String? = null
+
+    override fun onCreate(state: Bundle?) {
+        super.onCreate(state)
+        config = assets.open("app.json").bufferedReader().use { JSONObject(it.readText()) }
+        applyWindowOptions()
+        webView = WebView(this)
+        setContentView(webView)
+        configureWebView()
+        val page = config.optString("start_page", "index.html")
+            .split('/').joinToString("/") { Uri.encode(it) }
+        webView.loadUrl("file:///android_asset/www/$page")
+    }
+
+    private fun applyWindowOptions() {
+        requestedOrientation = when (config.optString("orientation", "auto")) {
+            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        if (config.optBoolean("fullscreen")) {
+            window.decorView.systemUiVisibility =
+                View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        }
+        if (config.optBoolean("keep_screen_on")) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        runCatching { window.statusBarColor = Color.parseColor(config.optString("status_bar_color")) }
+        runCatching { window.navigationBarColor = Color.parseColor(config.optString("navigation_bar_color")) }
+    }
+
+    @Suppress("SetJavaScriptEnabled")
+    private fun configureWebView() {
+        WebView.setWebContentsDebuggingEnabled(false)
+        with(webView.settings) {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            allowFileAccess = true
+            allowContentAccess = true
+            allowFileAccessFromFileURLs = false
+            allowUniversalAccessFromFileURLs = config.optBoolean("internet")
+            mixedContentMode = if (config.optBoolean("allow_cleartext_http"))
+                WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE else WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            mediaPlaybackRequiresUserGesture = false
+        }
+        if (config.optBoolean("file_api", true)) {
+            webView.addJavascriptInterface(NativeBridge(this), "H2ANative")
+        }
+        webView.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val uri = request.url
+                if (uri.toString().startsWith("file:///android_asset/www/")) return false
+                if ((uri.scheme == "http" || uri.scheme == "https") &&
+                    config.optBoolean("open_external_links", true)) {
+                    startActivity(Intent(Intent.ACTION_VIEW, uri))
+                    return true
+                }
+                return false
+            }
+
+            override fun onPageFinished(view: WebView, url: String) {
+                if (url.startsWith("file:///android_asset/www/")) view.evaluateJavascript(BRIDGE_JS, null)
+            }
+        }
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onShowFileChooser(
+                webView: WebView,
+                callback: ValueCallback<Array<Uri>>,
+                params: WebChromeClient.FileChooserParams
+            ): Boolean {
+                fileChooser?.onReceiveValue(null)
+                fileChooser = callback
+                return runCatching {
+                    startActivityForResult(params.createIntent(), REQUEST_FILE)
+                    true
+                }.getOrElse {
+                    fileChooser = null
+                    false
+                }
+            }
+
+            override fun onPermissionRequest(request: PermissionRequest) {
+                runOnUiThread {
+                    val allowed = request.resources.filter {
+                        when (it) {
+                            PermissionRequest.RESOURCE_VIDEO_CAPTURE -> capabilityGranted("camera")
+                            PermissionRequest.RESOURCE_AUDIO_CAPTURE -> capabilityGranted("microphone")
+                            else -> false
+                        }
+                    }.toTypedArray()
+                    if (allowed.isEmpty()) request.deny() else request.grant(allowed)
+                }
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String,
+                callback: GeolocationPermissions.Callback
+            ) {
+                callback.invoke(origin, capabilityGranted("location"), false)
+            }
+        }
+    }
+
+    private fun capabilityGranted(name: String): Boolean {
+        if (!config.optBoolean(name)) return false
+        val permission = when (name) {
+            "camera" -> Manifest.permission.CAMERA
+            "microphone" -> Manifest.permission.RECORD_AUDIO
+            "location" -> Manifest.permission.ACCESS_FINE_LOCATION
+            else -> return false
+        }
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    fun requestCapability(name: String) {
+        val permission = when (name) {
+            "camera" -> Manifest.permission.CAMERA
+            "microphone" -> Manifest.permission.RECORD_AUDIO
+            "location" -> Manifest.permission.ACCESS_FINE_LOCATION
+            "notifications" -> if (Build.VERSION.SDK_INT >= 33) Manifest.permission.POST_NOTIFICATIONS else null
+            else -> null
+        }
+        if (permission == null || !config.optBoolean(name)) {
+            dispatch("h2apermission", JSONObject().put("name", name).put("granted", permission == null))
+            return
+        }
+        pendingCapability = name
+        requestPermissions(arrayOf(permission), REQUEST_CAPABILITY)
+    }
+
+    fun requestStorage() {
+        when (config.optString("storage", "private")) {
+            "saf" -> startActivityForResult(
+                Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                ), REQUEST_TREE
+            )
+            "media" -> {
+                val permissions = if (Build.VERSION.SDK_INT >= 33) arrayOf(
+                    Manifest.permission.READ_MEDIA_AUDIO,
+                    Manifest.permission.READ_MEDIA_IMAGES,
+                    Manifest.permission.READ_MEDIA_VIDEO
+                ) else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+                requestPermissions(permissions, REQUEST_STORAGE)
+            }
+            "all_files" -> {
+                if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
+                    startActivityForResult(
+                        Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:$packageName")), REQUEST_ALL_FILES
+                    )
+                } else if (Build.VERSION.SDK_INT < 30) {
+                    requestPermissions(arrayOf(
+                        Manifest.permission.READ_EXTERNAL_STORAGE,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE
+                    ), REQUEST_STORAGE)
+                } else dispatchStorage(true)
+            }
+            else -> dispatchStorage(true)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        when (requestCode) {
+            REQUEST_FILE -> {
+                val result = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+                fileChooser?.onReceiveValue(result)
+                fileChooser = null
+            }
+            REQUEST_TREE -> {
+                val uri = data?.data
+                if (resultCode == RESULT_OK && uri != null) {
+                    val flags = (data?.flags ?: 0) and (Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    contentResolver.takePersistableUriPermission(uri, flags)
+                    getPreferences(MODE_PRIVATE).edit().putString("tree_uri", uri.toString()).apply()
+                    dispatchStorage(true)
+                } else dispatchStorage(false)
+            }
+            REQUEST_ALL_FILES -> dispatchStorage(Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager())
+        }
+    }
+
+    override fun onRequestPermissionsResult(code: Int, permissions: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(code, permissions, results)
+        val granted = results.isNotEmpty() && results.all { it == PackageManager.PERMISSION_GRANTED }
+        if (code == REQUEST_STORAGE) dispatchStorage(granted)
+        if (code == REQUEST_CAPABILITY) {
+            dispatch("h2apermission", JSONObject().put("name", pendingCapability)
+                .put("granted", granted))
+            pendingCapability = null
+        }
+    }
+
+    private fun dispatchStorage(granted: Boolean) {
+        dispatch("h2astorage", JSONObject().put("granted", granted)
+            .put("mode", config.optString("storage", "private")))
+    }
+
+    private fun dispatch(name: String, detail: JSONObject) {
+        runOnUiThread {
+            webView.evaluateJavascript(
+                "window.dispatchEvent(new CustomEvent(${JSONObject.quote(name)},{detail:${detail}}));",
+                null
+            )
+        }
+    }
+
+    override fun onBackPressed() {
+        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+    }
+
+    companion object {
+        private const val REQUEST_FILE = 5101
+        private const val REQUEST_TREE = 5102
+        private const val REQUEST_STORAGE = 5103
+        private const val REQUEST_ALL_FILES = 5104
+        private const val REQUEST_CAPABILITY = 5105
+        private val BRIDGE_JS = """
+            (() => {
+              if (window.H2A) return;
+              const call = (method, args=[]) => new Promise((resolve, reject) => {
+                try {
+                  const result = JSON.parse(H2ANative.call(method, JSON.stringify(args)));
+                  result.ok ? resolve(result.value) : reject(new Error(result.error));
+                } catch (e) { reject(e); }
+              });
+              const names = ['readText','writeText','readBase64','writeBase64','exists','remove',
+                'mkdir','list','encrypt','decrypt','toUrl','listMedia','requestStorage','requestCapability'];
+              window.H2A = { call };
+              names.forEach(name => window.H2A[name] = (...args) => call(name, args));
+              window.cordova = window.cordova || {}; cordova.plugins = cordova.plugins || {};
+              cordova.plugins.disusered = cordova.plugins.disusered || {};
+              cordova.plugins.disusered.safe = {
+                encrypt: (p,k,ok,ng) => H2A.encrypt(p,k).then(() => ok && ok(p)).catch(e => ng && ng(e)),
+                decrypt: (p,k,ok,ng) => H2A.decrypt(p,k).then(() => ok && ok(p)).catch(e => ng && ng(e))
+              };
+            })();
+        """.trimIndent()
+    }
+}
+
+private class NativeBridge(private val activity: MainActivity) {
+    @JavascriptInterface
+    fun call(method: String, arguments: String): String {
+        if (activity.webView.url?.startsWith("file:///android_asset/www/") != true) {
+            return failure("このページからはネイティブAPIを使用できません")
+        }
+        return runCatching {
+            val args = JSONArray(arguments)
+            when (method) {
+                "readText" -> success(String(readBytes(args.getString(0)), Charsets.UTF_8))
+                "writeText" -> { writeBytes(args.getString(0), args.getString(1).toByteArray()); success(true) }
+                "readBase64" -> success(Base64.encodeToString(readBytes(args.getString(0)), Base64.NO_WRAP))
+                "writeBase64" -> { writeBytes(args.getString(0), Base64.decode(args.getString(1), Base64.DEFAULT)); success(true) }
+                "exists" -> success(exists(args.getString(0)))
+                "remove" -> success(remove(args.getString(0)))
+                "mkdir" -> success(mkdir(args.getString(0)))
+                "list" -> success(list(args.getString(0)))
+                "encrypt" -> { cryptFile(args.getString(0), args.getString(1), true); success(args.getString(0)) }
+                "decrypt" -> { cryptFile(args.getString(0), args.getString(1), false); success(args.getString(0)) }
+                "toUrl" -> success(toUrl(args.getString(0)))
+                "listMedia" -> success(listMedia(args.optString(0, "audio")))
+                "requestStorage" -> { activity.runOnUiThread { activity.requestStorage() }; success(true) }
+                "requestCapability" -> {
+                    activity.runOnUiThread { activity.requestCapability(args.getString(0)) }; success(true)
+                }
+                else -> failure("不明なAPI: $method")
+            }
+        }.getOrElse { failure(it.message ?: it.javaClass.simpleName) }
+    }
+
+    private fun readBytes(path: String): ByteArray {
+        if (path.startsWith("saf:")) {
+            val doc = safDocument(path.removePrefix("saf:"), false, false)
+                ?: error("ファイルが見つかりません")
+            return activity.contentResolver.openInputStream(doc.uri)!!.use { it.readBytes() }
+        }
+        return resolveFile(path).readBytes()
+    }
+
+    private fun writeBytes(path: String, bytes: ByteArray) {
+        if (path.startsWith("saf:")) {
+            val doc = safDocument(path.removePrefix("saf:"), true, true) ?: error("ファイルを作成できません")
+            activity.contentResolver.openOutputStream(doc.uri, "wt")!!.use { it.write(bytes) }
+            return
+        }
+        val file = resolveFile(path)
+        file.parentFile?.mkdirs()
+        file.writeBytes(bytes)
+    }
+
+    private fun exists(path: String): Boolean = if (path.startsWith("saf:"))
+        safDocument(path.removePrefix("saf:"), false, false)?.exists() == true else resolveFile(path).exists()
+
+    private fun remove(path: String): Boolean = if (path.startsWith("saf:"))
+        safDocument(path.removePrefix("saf:"), false, false)?.delete() == true else resolveFile(path).deleteRecursively()
+
+    private fun mkdir(path: String): Boolean {
+        if (path.startsWith("saf:")) return safDocument(path.removePrefix("saf:"), true, false)?.isDirectory == true
+        return resolveFile(path).mkdirs()
+    }
+
+    private fun list(path: String): JSONArray {
+        val result = JSONArray()
+        if (path.startsWith("saf:")) {
+            val directory = safDocument(path.removePrefix("saf:"), false, false) ?: return result
+            directory.listFiles().sortedBy { it.name }.forEach { doc ->
+                result.put(JSONObject().put("name", doc.name).put("directory", doc.isDirectory)
+                    .put("size", doc.length()).put("modified", doc.lastModified()).put("uri", doc.uri.toString()))
+            }
+        } else {
+            resolveFile(path).listFiles()?.sortedBy { it.name }?.forEach { file ->
+                result.put(JSONObject().put("name", file.name).put("directory", file.isDirectory)
+                    .put("size", file.length()).put("modified", file.lastModified()))
+            }
+        }
+        return result
+    }
+
+    private fun resolveFile(path: String): File {
+        val fileUri = path.startsWith("file:")
+        val external = path.startsWith("ext:") || fileUri
+        if (external && activity.config.optString("storage") != "all_files") error("全ファイルモードが必要です")
+        if (external && Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) error("全ファイル権限がありません")
+        val relative = if (path.startsWith("ext:")) path.removePrefix("ext:") else path
+        if (relative.contains('\u0000')) error("不正なパスです")
+        val base = (if (external) Environment.getExternalStorageDirectory()
+            else File(activity.filesDir, "h2a")).canonicalFile
+        base.mkdirs()
+        val target = if (fileUri) File(Uri.parse(path).path ?: error("不正なURIです")).canonicalFile
+            else File(base, relative.trimStart('/', '\\')).canonicalFile
+        if (target != base && !target.path.startsWith(base.path + File.separator)) error("フォルダ外にはアクセスできません")
+        return target
+    }
+
+    private fun treeRoot(): DocumentFile {
+        val value = activity.getPreferences(Activity.MODE_PRIVATE).getString("tree_uri", null)
+            ?: error("フォルダが選択されていません")
+        return DocumentFile.fromTreeUri(activity, Uri.parse(value)) ?: error("選択フォルダを開けません")
+    }
+
+    private fun safDocument(path: String, create: Boolean, fileAtEnd: Boolean): DocumentFile? {
+        val parts = path.replace('\\', '/').split('/').filter { it.isNotBlank() && it != "." }
+        if (parts.any { it == ".." }) error("フォルダ外にはアクセスできません")
+        var current = treeRoot()
+        parts.forEachIndexed { index, name ->
+            val last = index == parts.lastIndex
+            val found = current.findFile(name)
+            current = found ?: if (!create) return null else if (last && fileAtEnd) {
+                current.createFile(mime(name), name) ?: return null
+            } else current.createDirectory(name) ?: return null
+        }
+        return current
+    }
+
+    private fun mime(name: String): String = MimeTypeMap.getSingleton()
+        .getMimeTypeFromExtension(name.substringAfterLast('.', "")) ?: "application/octet-stream"
+
+    private fun toUrl(path: String): String = when {
+        path.startsWith("saf:") -> safDocument(path.removePrefix("saf:"), false, false)?.uri?.toString()
+            ?: error("ファイルが見つかりません")
+        else -> Uri.fromFile(resolveFile(path)).toString()
+    }
+
+    private fun listMedia(kind: String): JSONArray {
+        if (activity.config.optString("storage") !in setOf("media", "all_files")) error("メディア権限が無効です")
+        val (uri, projection) = when (kind) {
+            "image" -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI to arrayOf(
+                MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME, MediaStore.Images.Media.SIZE)
+            "video" -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI to arrayOf(
+                MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME, MediaStore.Video.Media.SIZE,
+                MediaStore.Video.Media.DURATION)
+            else -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI to arrayOf(
+                MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.SIZE, MediaStore.Audio.Media.DURATION)
+        }
+        val result = JSONArray()
+        activity.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(0)
+                val item = JSONObject().put("id", id).put("title", cursor.getString(1) ?: "")
+                    .put("url", Uri.withAppendedPath(uri, id.toString()).toString())
+                for (i in 2 until projection.size) item.put(projection[i].substringAfterLast('_').lowercase(), cursor.getString(i))
+                result.put(item)
+            }
+        }
+        return result
+    }
+
+    private fun cryptFile(path: String, password: String, encrypt: Boolean) {
+        val input = readBytes(path)
+        val output = if (encrypt) encrypt(input, password) else decrypt(input, password)
+        writeBytes(path, output)
+    }
+
+    private fun encrypt(data: ByteArray, password: String): ByteArray {
+        val salt = ByteArray(16).also(SecureRandom()::nextBytes)
+        val nonce = ByteArray(12).also(SecureRandom()::nextBytes)
+        val key = derive(password, salt)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(128, nonce))
+        return "H2AE1".toByteArray() + salt + nonce + cipher.doFinal(data)
+    }
+
+    private fun decrypt(data: ByteArray, password: String): ByteArray {
+        if (data.size < 33 || String(data.copyOfRange(0, 5)) != "H2AE1") error("暗号化ファイル形式が不正です")
+        val salt = data.copyOfRange(5, 21)
+        val nonce = data.copyOfRange(21, 33)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, derive(password, salt), GCMParameterSpec(128, nonce))
+        return cipher.doFinal(data.copyOfRange(33, data.size))
+    }
+
+    private fun derive(password: String, salt: ByteArray) = javax.crypto.spec.SecretKeySpec(
+        SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+            .generateSecret(PBEKeySpec(password.toCharArray(), salt, 150_000, 256)).encoded, "AES")
+
+    private fun success(value: Any?): String = JSONObject().put("ok", true)
+        .put("value", value ?: JSONObject.NULL).toString()
+    private fun failure(message: String): String = JSONObject().put("ok", false).put("error", message).toString()
+}

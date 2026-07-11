@@ -1,0 +1,22 @@
+{
+  "app_name": "Html2Apk",
+  "package_id": "io.html2apk.generated",
+  "version_name": "1.0.0",
+  "version_code": 1,
+  "start_page": "index.html",
+  "orientation": "auto",
+  "fullscreen": false,
+  "keep_screen_on": false,
+  "open_external_links": true,
+  "allow_cleartext_http": false,
+  "storage": "private",
+  "internet": false,
+  "camera": false,
+  "microphone": false,
+  "location": false,
+  "notifications": false,
+  "file_api": true,
+  "status_bar_color": "#202124",
+  "navigation_bar_color": "#000000"
+}
+
