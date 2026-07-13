@@ -40,7 +40,7 @@ jobs:
       - name: Generate dependency licenses
         shell: pwsh
         run: |
-          cargo install cargo-about --locked
+          cargo install cargo-about --locked --features cli
           cargo about generate about.hbs -o THIRD_PARTY_LICENSES.html
 
       - name: Package
