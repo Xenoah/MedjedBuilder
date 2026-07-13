@@ -7,3 +7,5 @@
 Html2Apk-Windows-x64.zip
 THIRD_PARTY_LICENSES.html
 
+/template/template.aab
+*.aab.tmp

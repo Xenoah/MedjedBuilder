@@ -13,6 +13,7 @@ base64 = "0.22"
 dirs = "6"
 eframe = "0.31"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+prost = "0.13"
 rand = "0.8"
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring", "pem"] }
 rfd = "0.15"

@@ -2,7 +2,7 @@ use crate::{
     axml::patch_manifest,
     signing::{default_key_path, ensure_key, sign_apk},
     validate::validate_request,
-    AppConfig, StorageMode,
+    AppConfig, OutputFormat, StorageMode,
 };
 use anyhow::{bail, Context, Result};
 use image::{imageops::FilterType, ImageFormat};
@@ -17,7 +17,7 @@ use zip::{write::FileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 const TEMPLATE_APK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/template.apk"));
 const MAX_WEB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-const ICON_PATHS: &[(&str, u32)] = &[
+pub(crate) const ICON_PATHS: &[(&str, u32)] = &[
     ("res/drawable-mdpi/icon_payload.png", 48),
     ("res/drawable-hdpi/icon_payload.png", 72),
     ("res/drawable-xhdpi/icon_payload.png", 96),
@@ -32,6 +32,15 @@ pub struct BuildRequest {
     pub icon: Option<PathBuf>,
     pub signing_key: Option<PathBuf>,
     pub config: AppConfig,
+    pub format: OutputFormat,
+}
+
+/// 出力形式に応じてAPKまたはAABを生成する。
+pub fn build(request: &BuildRequest) -> Result<PathBuf> {
+    match request.format {
+        OutputFormat::Apk => build_apk(request),
+        OutputFormat::Aab => crate::aab::build_aab(request),
+    }
 }
 
 pub fn build_apk(request: &BuildRequest) -> Result<PathBuf> {
@@ -144,7 +153,10 @@ fn write_entry<W: Write + std::io::Seek>(
     Ok(())
 }
 
-fn collect_web_files(root: &Path, excluded: &[&PathBuf]) -> Result<Vec<(PathBuf, String)>> {
+pub(crate) fn collect_web_files(
+    root: &Path,
+    excluded: &[&PathBuf],
+) -> Result<Vec<(PathBuf, String)>> {
     let mut files = Vec::new();
     let mut total = 0u64;
     for entry in WalkDir::new(root).follow_links(false) {
@@ -180,7 +192,7 @@ fn collect_web_files(root: &Path, excluded: &[&PathBuf]) -> Result<Vec<(PathBuf,
     Ok(files)
 }
 
-fn prepare_icons(icon: Option<&Path>) -> Result<BTreeMap<String, Vec<u8>>> {
+pub(crate) fn prepare_icons(icon: Option<&Path>) -> Result<BTreeMap<String, Vec<u8>>> {
     let mut output = BTreeMap::new();
     let Some(icon) = icon else {
         return Ok(output);
@@ -210,7 +222,7 @@ fn alignment_for(name: &str) -> u64 {
     }
 }
 
-fn manifest_replacements(config: &AppConfig) -> HashMap<String, String> {
+pub(crate) fn manifest_replacements(config: &AppConfig) -> HashMap<String, String> {
     let mut values = HashMap::from([
         ("io.html2apk.generated".into(), config.package_id.clone()),
         ("__H2A_APP_NAME__".into(), config.app_name.clone()),
@@ -274,6 +286,7 @@ mod tests {
             icon: None,
             signing_key: Some(key),
             config,
+            format: OutputFormat::Apk,
         };
         build_apk(&request).unwrap();
         assert!(output.is_file());

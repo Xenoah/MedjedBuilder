@@ -3,11 +3,24 @@
 mod theme;
 
 use eframe::egui;
-use html2apk::{build_apk, AppConfig, BuildRequest, Orientation, StorageMode};
+use html2apk::{build, AppConfig, BuildRequest, Orientation, OutputFormat, StorageMode};
+use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
+
+/// `.h2aproj`ファイルとして保存・復元されるプロジェクト一式。
+#[derive(Default, Serialize, Deserialize)]
+#[serde(default)]
+struct Project {
+    web_root: Option<PathBuf>,
+    output_apk: Option<PathBuf>,
+    icon: Option<PathBuf>,
+    signing_key: Option<PathBuf>,
+    config: AppConfig,
+    format: OutputFormat,
+}
 
 fn main() -> eframe::Result<()> {
     if !ensure_single_instance() {
@@ -17,7 +30,8 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_title("Html2Apk")
             .with_inner_size([720.0, 880.0])
-            .with_min_inner_size([620.0, 650.0]),
+            .with_resizable(false)
+            .with_maximize_button(false),
         ..Default::default()
     };
     eframe::run_native(
@@ -42,6 +56,7 @@ struct BuilderApp {
     icon: Option<PathBuf>,
     signing_key: Option<PathBuf>,
     config: AppConfig,
+    format: OutputFormat,
     status: String,
     advanced_open: bool,
     theme: theme::WindowsTheme,
@@ -78,12 +93,37 @@ impl BuilderApp {
     }
 
     fn contents(&mut self, ui: &mut egui::Ui) {
-        ui.heading("HTMLからAndroid APKを作成");
+        ui.horizontal(|ui| {
+            ui.heading("HTMLからAndroid APKを作成");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("プロジェクトを保存").clicked() {
+                    self.save_project();
+                }
+                if ui.button("プロジェクトを読み込み").clicked() {
+                    self.load_project();
+                }
+            });
+        });
         ui.label("HTMLフォルダを選び、必要な権限だけ有効にしてください。");
         ui.add_space(10.0);
 
         card(ui, |ui| {
             section_title(ui, "入力と出力");
+            ui.horizontal(|ui| {
+                ui.label("出力形式");
+                let apk = ui.selectable_value(&mut self.format, OutputFormat::Apk, "APK");
+                let aab = ui.selectable_value(
+                    &mut self.format,
+                    OutputFormat::Aab,
+                    "AAB（Google Play用）",
+                );
+                if apk.changed() || aab.changed() {
+                    if let Some(output) = self.output_apk.take() {
+                        self.output_apk = Some(output.with_extension(self.format.extension()));
+                    }
+                }
+            });
+            let extension = self.format.extension();
             let current = self.web_root.clone();
             path_picker(ui, "HTMLフォルダ", current.as_ref(), || {
                 rfd::FileDialog::new().pick_folder()
@@ -95,7 +135,7 @@ impl BuilderApp {
                     .to_owned();
                 self.config.app_name = name.clone();
                 self.config.package_id = format!("com.html2apk.{}", slug(&name));
-                self.output_apk = Some(path.with_extension("apk"));
+                self.output_apk = Some(path.with_extension(extension));
                 self.web_root = Some(path);
             });
             let current = self.icon.clone();
@@ -105,10 +145,14 @@ impl BuilderApp {
                     .pick_file()
             }, |path| self.icon = Some(path));
             let current = self.output_apk.clone();
-            path_picker(ui, "出力APK", current.as_ref(), || {
+            let filter_name = match self.format {
+                OutputFormat::Apk => "Android APK",
+                OutputFormat::Aab => "Android App Bundle",
+            };
+            path_picker(ui, "出力ファイル", current.as_ref(), || {
                 rfd::FileDialog::new()
-                    .add_filter("Android APK", &["apk"])
-                    .set_file_name("app.apk")
+                    .add_filter(filter_name, &[extension])
+                    .set_file_name(format!("app.{extension}"))
                     .save_file()
             }, |path| self.output_apk = Some(path));
         });
@@ -202,11 +246,15 @@ impl BuilderApp {
 
         ui.add_space(12.0);
         let ready = self.web_root.is_some() && self.output_apk.is_some();
+        let build_label = match self.format {
+            OutputFormat::Apk => "APKをビルド",
+            OutputFormat::Aab => "AABをビルド",
+        };
         let build_button = if ready {
-            egui::Button::new(egui::RichText::new("APKをビルド").color(self.theme.on_accent()))
+            egui::Button::new(egui::RichText::new(build_label).color(self.theme.on_accent()))
                 .fill(self.theme.accent)
         } else {
-            egui::Button::new("APKをビルド")
+            egui::Button::new(build_label)
         }
         .min_size([180.0, 38.0].into());
         if ui.add_enabled(ready, build_button).clicked() {
@@ -215,6 +263,57 @@ impl BuilderApp {
         if !self.status.is_empty() {
             ui.separator();
             ui.label(&self.status);
+        }
+    }
+
+    fn save_project(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Html2Apkプロジェクト", &["h2aproj"])
+            .set_file_name(format!("{}.h2aproj", slug(&self.config.app_name)))
+            .save_file()
+        else {
+            return;
+        };
+        let project = Project {
+            web_root: self.web_root.clone(),
+            output_apk: self.output_apk.clone(),
+            icon: self.icon.clone(),
+            signing_key: self.signing_key.clone(),
+            config: self.config.clone(),
+            format: self.format,
+        };
+        self.status = match serde_json::to_string_pretty(&project)
+            .map_err(anyhow::Error::from)
+            .and_then(|json| std::fs::write(&path, json).map_err(Into::into))
+        {
+            Ok(()) => format!("プロジェクトを保存しました: {}", path.display()),
+            Err(error) => format!("エラー: プロジェクトを保存できません: {error:#}"),
+        };
+    }
+
+    fn load_project(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Html2Apkプロジェクト", &["h2aproj"])
+            .pick_file()
+        else {
+            return;
+        };
+        match std::fs::read_to_string(&path)
+            .map_err(anyhow::Error::from)
+            .and_then(|text| serde_json::from_str::<Project>(&text).map_err(Into::into))
+        {
+            Ok(project) => {
+                self.web_root = project.web_root;
+                self.output_apk = project.output_apk;
+                self.icon = project.icon;
+                self.signing_key = project.signing_key;
+                self.config = project.config;
+                self.format = project.format;
+                self.status = format!("プロジェクトを読み込みました: {}", path.display());
+            }
+            Err(error) => {
+                self.status = format!("エラー: プロジェクトを読み込めません: {error:#}");
+            }
         }
     }
 
@@ -228,8 +327,9 @@ impl BuilderApp {
             icon: self.icon.clone(),
             signing_key: self.signing_key.clone(),
             config: self.config.clone(),
+            format: self.format,
         };
-        self.status = match build_apk(&request) {
+        self.status = match build(&request) {
             Ok(path) => format!("完成: {}（{:.1}秒）", path.display(), started.elapsed().as_secs_f32()),
             Err(error) => format!("エラー: {error:#}"),
         };

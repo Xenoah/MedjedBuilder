@@ -29,6 +29,23 @@ impl Default for StorageMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputFormat {
+    #[default]
+    Apk,
+    Aab,
+}
+
+impl OutputFormat {
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Apk => "apk",
+            Self::Aab => "aab",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {

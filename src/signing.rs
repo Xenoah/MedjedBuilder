@@ -63,7 +63,8 @@ pub fn ensure_key(path: &Path, app_name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn sign_apk(raw_apk: &Path, output_apk: &Path, key_path: &Path) -> Result<()> {
+/// 保存済み署名鍵から証明書DERと秘密鍵を読み込む。
+pub(crate) fn load_key(key_path: &Path) -> Result<(Vec<u8>, RsaPrivateKey)> {
     let stored: StoredKey = serde_json::from_slice(
         &fs::read(key_path).with_context(|| format!("署名鍵を読めません: {}", key_path.display()))?,
     )?;
@@ -73,6 +74,11 @@ pub fn sign_apk(raw_apk: &Path, output_apk: &Path, key_path: &Path) -> Result<()
     let private_der = STANDARD.decode(stored.private_key_pkcs8)?;
     let cert_der = STANDARD.decode(stored.certificate_der)?;
     let private_key = RsaPrivateKey::from_pkcs8_der(&private_der)?;
+    Ok((cert_der, private_key))
+}
+
+pub fn sign_apk(raw_apk: &Path, output_apk: &Path, key_path: &Path) -> Result<()> {
+    let (cert_der, private_key) = load_key(key_path)?;
 
     let mut apk = Apk::new_raw(raw_apk.to_path_buf())?;
     apk.sign_v2(

@@ -52,7 +52,6 @@
 - 全メソッドはPromiseを返す
 - `../`、絶対パス、シンボリックリンクによる範囲外アクセスを拒否
 - SAFパスは`saf:`、全ファイルパスは`ext:`を付与
-- cordova-safe形式の`encrypt(file,key,success,error)`と`decrypt(...)`を提供
 - 暗号形式はAES-256-GCM、PBKDF2-HMAC-SHA256（150,000回）、ランダムsalt/nonce
 
 ## 署名鍵
@@ -74,7 +73,6 @@
 
 ## 対象外
 
-- AAB / Google Play向け公開フロー
 - iOS
 - Android 7以前
 - DRM

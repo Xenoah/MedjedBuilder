@@ -276,12 +276,6 @@ class MainActivity : Activity() {
                 'mkdir','list','encrypt','decrypt','toUrl','listMedia','requestStorage','requestCapability'];
               window.H2A = { call };
               names.forEach(name => window.H2A[name] = (...args) => call(name, args));
-              window.cordova = window.cordova || {}; cordova.plugins = cordova.plugins || {};
-              cordova.plugins.disusered = cordova.plugins.disusered || {};
-              cordova.plugins.disusered.safe = {
-                encrypt: (p,k,ok,ng) => H2A.encrypt(p,k).then(() => ok && ok(p)).catch(e => ng && ng(e)),
-                decrypt: (p,k,ok,ng) => H2A.decrypt(p,k).then(() => ok && ok(p)).catch(e => ng && ng(e))
-              };
             })();
         """.trimIndent()
     }
