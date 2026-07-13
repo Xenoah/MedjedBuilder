@@ -10,10 +10,13 @@ use std::{
 };
 
 fn main() -> eframe::Result<()> {
+    if !ensure_single_instance() {
+        return Ok(());
+    }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Html2Apk")
-            .with_inner_size([720.0, 790.0])
+            .with_inner_size([720.0, 880.0])
             .with_min_inner_size([620.0, 650.0]),
         ..Default::default()
     };
@@ -231,6 +234,34 @@ impl BuilderApp {
             Err(error) => format!("エラー: {error:#}"),
         };
     }
+}
+
+/// 二重起動を防ぐ。既に起動済みの場合は既存ウィンドウを前面に出してfalseを返す。
+#[cfg(windows)]
+fn ensure_single_instance() -> bool {
+    use windows_sys::Win32::Foundation::{GetLastError, ERROR_ALREADY_EXISTS};
+    use windows_sys::Win32::System::Threading::CreateMutexW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, SetForegroundWindow};
+
+    let mutex_name: Vec<u16> = "Html2Apk.SingleInstance\0".encode_utf16().collect();
+    unsafe {
+        // ミューテックスはプロセス終了まで保持するため、ハンドルは意図的に閉じない。
+        CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr());
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            let title: Vec<u16> = "Html2Apk\0".encode_utf16().collect();
+            let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+            if !hwnd.is_null() {
+                SetForegroundWindow(hwnd);
+            }
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(not(windows))]
+fn ensure_single_instance() -> bool {
+    true
 }
 
 /// セクションタイトル（LINE Seed JP Boldで表示）。

@@ -1625,6 +1625,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "walkdir",
+ "windows-sys 0.60.2",
  "winreg",
  "zip",
 ]
