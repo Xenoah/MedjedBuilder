@@ -80,7 +80,7 @@ impl BuilderApp {
         ui.add_space(10.0);
 
         card(ui, |ui| {
-            ui.strong("入力と出力");
+            section_title(ui, "入力と出力");
             let current = self.web_root.clone();
             path_picker(ui, "HTMLフォルダ", current.as_ref(), || {
                 rfd::FileDialog::new().pick_folder()
@@ -112,7 +112,7 @@ impl BuilderApp {
 
         ui.add_space(8.0);
         card(ui, |ui| {
-            ui.strong("アプリ情報");
+            section_title(ui, "アプリ情報");
             egui::Grid::new("app-info").num_columns(2).show(ui, |ui| {
                 ui.label("アプリ名");
                 ui.text_edit_singleline(&mut self.config.app_name);
@@ -135,7 +135,7 @@ impl BuilderApp {
 
         ui.add_space(8.0);
         card(ui, |ui| {
-            ui.strong("表示");
+            section_title(ui, "表示");
             ui.horizontal(|ui| {
                 ui.label("画面向き");
                 ui.selectable_value(&mut self.config.orientation, Orientation::Auto, "自動");
@@ -151,7 +151,7 @@ impl BuilderApp {
 
         ui.add_space(8.0);
         card(ui, |ui| {
-            ui.strong("ストレージ");
+            section_title(ui, "ストレージ");
             egui::ComboBox::from_id_salt("storage-mode")
                 .selected_text(storage_label(self.config.storage))
                 .show_ui(ui, |ui| {
@@ -231,6 +231,15 @@ impl BuilderApp {
             Err(error) => format!("エラー: {error:#}"),
         };
     }
+}
+
+/// セクションタイトル（LINE Seed JP Boldで表示）。
+fn section_title(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        egui::RichText::new(text)
+            .family(egui::FontFamily::Name(theme::BOLD_FAMILY.into()))
+            .size(15.0),
+    );
 }
 
 /// WinUIのカード風フレーム。

@@ -64,23 +64,39 @@ pub fn detect() -> WindowsTheme {
     WindowsTheme::default()
 }
 
-/// 同梱のNoto Sans JPを既定フォントとして登録する。
+/// 見出し・強調用の太字ファミリー名。
+pub const BOLD_FAMILY: &str = "line_seed_jp_bold";
+
+/// 同梱のLINE Seed JP（Regular/Bold）を既定フォントとして登録する。
+/// Thinウェイトは使用しない。
 pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     fonts.font_data.insert(
-        "noto_sans_jp".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/fonts/NotoSansJP-VF.ttf")).into(),
+        "line_seed_jp".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/LINESeedJP_A_TTF_Rg.ttf"))
+            .into(),
+    );
+    fonts.font_data.insert(
+        BOLD_FAMILY.to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/LINESeedJP_A_TTF_Bd.ttf"))
+            .into(),
     );
     fonts
         .families
         .get_mut(&FontFamily::Proportional)
         .expect("proportional family")
-        .insert(0, "noto_sans_jp".to_owned());
+        .insert(0, "line_seed_jp".to_owned());
     fonts
         .families
         .get_mut(&FontFamily::Monospace)
         .expect("monospace family")
-        .push("noto_sans_jp".to_owned());
+        .push("line_seed_jp".to_owned());
+    // 太字ファミリー: 先頭をBoldに置き換え、残りはフォールバックとして流用。
+    let mut bold_stack = fonts.families[&FontFamily::Proportional].clone();
+    bold_stack[0] = BOLD_FAMILY.to_owned();
+    fonts
+        .families
+        .insert(FontFamily::Name(BOLD_FAMILY.into()), bold_stack);
     ctx.set_fonts(fonts);
 }
 
@@ -89,7 +105,7 @@ pub fn apply(ctx: &egui::Context, theme: &WindowsTheme) {
     let mut style = (*ctx.style()).clone();
 
     style.text_styles = [
-        (TextStyle::Heading, FontId::new(22.0, FontFamily::Proportional)),
+        (TextStyle::Heading, FontId::new(22.0, FontFamily::Name(BOLD_FAMILY.into()))),
         (TextStyle::Body, FontId::new(14.0, FontFamily::Proportional)),
         (TextStyle::Button, FontId::new(14.0, FontFamily::Proportional)),
         (TextStyle::Small, FontId::new(12.0, FontFamily::Proportional)),

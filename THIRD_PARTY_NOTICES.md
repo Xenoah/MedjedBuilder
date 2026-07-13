@@ -6,11 +6,11 @@ The embedded Android application uses AndroidX DocumentFile, licensed under the 
 - Copyright: The Android Open Source Project
 - License: Apache-2.0 (`licenses/Apache-2.0.txt`)
 
-The Windows executable embeds the Noto Sans JP font for Japanese text rendering.
+The Windows executable embeds the LINE Seed JP font (Regular/Bold) for Japanese text rendering.
 
-- Component: Noto Sans JP
-- Copyright: The Noto Project Authors
-- License: SIL Open Font License 1.1 (`licenses/OFL-NotoSansJP.txt`)
+- Component: LINE Seed JP
+- Copyright: LY Corporation
+- License: SIL Open Font License 1.1 (`licenses/OFL-LINESeedJP.txt`)
 
 The Rust dependency list and corresponding license texts are generated as `THIRD_PARTY_LICENSES.html` for each Windows release.
 

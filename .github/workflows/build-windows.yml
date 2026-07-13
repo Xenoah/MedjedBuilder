@@ -51,7 +51,7 @@ jobs:
           Copy-Item README.md,LICENSE,SPECIFICATION.md,THIRD_PARTY_NOTICES.md,THIRD_PARTY_LICENSES.html release/
           New-Item -ItemType Directory -Force release/licenses | Out-Null
           Copy-Item licenses/Apache-2.0.txt release/licenses/
-          Copy-Item assets/fonts/OFL.txt release/licenses/OFL-NotoSansJP.txt
+          Copy-Item assets/fonts/OFL.txt release/licenses/OFL-LINESeedJP.txt
           Compress-Archive -Path release/* -DestinationPath Html2Apk-Windows-x64.zip
 
       - uses: actions/upload-artifact@v4
