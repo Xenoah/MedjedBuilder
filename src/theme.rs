@@ -113,9 +113,9 @@ pub fn apply(ctx: &egui::Context, theme: &WindowsTheme) {
     ]
     .into();
 
-    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
-    style.spacing.button_padding = egui::vec2(12.0, 5.0);
-    style.spacing.interact_size.y = 30.0;
+    style.spacing.item_spacing = egui::vec2(8.0, 5.0);
+    style.spacing.button_padding = egui::vec2(12.0, 4.0);
+    style.spacing.interact_size.y = 28.0;
 
     let mut visuals = if theme.dark {
         egui::Visuals::dark()

@@ -29,7 +29,7 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Html2Apk")
-            .with_inner_size([720.0, 880.0])
+            .with_inner_size([720.0, 900.0])
             .with_resizable(false)
             .with_maximize_button(false),
         ..Default::default()
@@ -381,7 +381,7 @@ fn card<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> 
         .fill(fill)
         .stroke(stroke)
         .corner_radius(egui::CornerRadius::same(8))
-        .inner_margin(egui::Margin::same(12))
+        .inner_margin(egui::Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add_contents(ui)
