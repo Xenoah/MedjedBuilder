@@ -27,6 +27,8 @@ Windows上でHTMLフォルダから、APKやAABを作成するツールです。
 
 GitHub Actionsの成果物 `MedjedBuilder-Windows-x64.zip` を展開し、`MedjedBuilder.exe` を起動します。
 
+<p align="center"><img src="assets/screenshot.png" alt="MedjedBuilder の画面" width="480"></p>
+
 1. `index.html`を含むHTMLフォルダを選択
 2. アプリ情報と必要な権限を設定
 3. 出力先を選んで「APKをビルド」
