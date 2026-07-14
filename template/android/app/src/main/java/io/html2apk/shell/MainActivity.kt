@@ -289,8 +289,9 @@ class MainActivity : Activity() {
                 } catch (e) { reject(e); }
               });
               const names = ['readText','writeText','readBase64','writeBase64','openRead','readChunk',
-                'closeRead','extractZipStart','extractZipStatus','exists','remove','mkdir','list',
-                'encrypt','decrypt','toUrl','listMedia','requestStorage','requestCapability'];
+                'closeRead','openRandom','readRandom','closeRandom','extractZipStart','extractZipStatus',
+                'exists','remove','mkdir','list','encrypt','decrypt','toUrl','listMedia',
+                'requestStorage','requestCapability'];
               window.H2A = { call };
               names.forEach(name => window.H2A[name] = (...args) => call(name, args));
             })();
@@ -318,6 +319,9 @@ private class NativeBridge(private val activity: MainActivity) {
                 "closeRead" -> { closeRead(args.getInt(0)); success(true) }
                 "extractZipStart" -> success(extractZipStart(args.getString(0), args.getString(1)))
                 "extractZipStatus" -> success(extractZipStatus(args.getInt(0)))
+                "openRandom" -> success(openRandom(args.getString(0)))
+                "readRandom" -> success(readRandom(args.getInt(0), args.getLong(1), args.getInt(2)))
+                "closeRandom" -> { closeRandom(args.getInt(0)); success(true) }
                 "exists" -> success(exists(args.getString(0)))
                 "remove" -> success(remove(args.getString(0)))
                 "mkdir" -> success(mkdir(args.getString(0)))
@@ -379,6 +383,50 @@ private class NativeBridge(private val activity: MainActivity) {
 
     private fun closeRead(id: Int) {
         readStreams.remove(id)?.close()
+    }
+
+    // 任意の位置から読めるランダムアクセスAPI。ZIPアーカイブのように
+    // 「末尾の目次だけ読む」「必要なエントリだけ読む」用途で、
+    // ファイル全体を転送せずに済む。openRandom は {id, size} を返す。
+    private class RandomSource(val pfd: android.os.ParcelFileDescriptor?, val stream: java.io.FileInputStream) {
+        val channel: java.nio.channels.FileChannel = stream.channel
+    }
+
+    private val randomSources = java.util.concurrent.ConcurrentHashMap<Int, RandomSource>()
+
+    private fun openRandom(path: String): JSONObject {
+        val source = if (path.startsWith("saf:")) {
+            val doc = safDocument(path.removePrefix("saf:"), false, false) ?: error("ファイルが見つかりません")
+            val pfd = activity.contentResolver.openFileDescriptor(doc.uri, "r") ?: error("ファイルを開けません")
+            RandomSource(pfd, java.io.FileInputStream(pfd.fileDescriptor))
+        } else {
+            RandomSource(null, java.io.FileInputStream(resolveFile(path)))
+        }
+        val id = nextReadId.getAndIncrement()
+        randomSources[id] = source
+        return JSONObject().put("id", id).put("size", source.channel.size())
+    }
+
+    private fun readRandom(id: Int, offset: Long, length: Int): String {
+        if (length <= 0 || length > 16 * 1024 * 1024) error("チャンクサイズが不正です")
+        val source = randomSources[id] ?: error("ストリームが開かれていません")
+        val buf = java.nio.ByteBuffer.allocate(length)
+        var pos = offset
+        while (buf.hasRemaining()) {
+            val r = source.channel.read(buf, pos)
+            if (r < 0) break
+            pos += r
+        }
+        val read = buf.position()
+        return if (read <= 0) "" else Base64.encodeToString(buf.array(), 0, read, Base64.NO_WRAP)
+    }
+
+    private fun closeRandom(id: Int) {
+        randomSources.remove(id)?.let {
+            runCatching { it.channel.close() }
+            runCatching { it.stream.close() }
+            runCatching { it.pfd?.close() }
+        }
     }
 
     // ZIPをアプリ専用領域(filesDir/h2a配下)へネイティブスレッドで展開する。
