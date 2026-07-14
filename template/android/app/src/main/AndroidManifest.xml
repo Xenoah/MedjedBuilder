@@ -16,6 +16,7 @@
         android:allowBackup="false"
         android:icon="@drawable/icon_payload"
         android:label="__H2A_APP_NAME__"
+        android:largeHeap="true"
         android:requestLegacyExternalStorage="true"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"

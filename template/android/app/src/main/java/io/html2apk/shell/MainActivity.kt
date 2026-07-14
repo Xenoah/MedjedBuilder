@@ -288,8 +288,9 @@ class MainActivity : Activity() {
                   result.ok ? resolve(result.value) : reject(new Error(result.error));
                 } catch (e) { reject(e); }
               });
-              const names = ['readText','writeText','readBase64','writeBase64','exists','remove',
-                'mkdir','list','encrypt','decrypt','toUrl','listMedia','requestStorage','requestCapability'];
+              const names = ['readText','writeText','readBase64','writeBase64','openRead','readChunk',
+                'closeRead','exists','remove','mkdir','list','encrypt','decrypt','toUrl','listMedia',
+                'requestStorage','requestCapability'];
               window.H2A = { call };
               names.forEach(name => window.H2A[name] = (...args) => call(name, args));
             })();
@@ -312,6 +313,9 @@ private class NativeBridge(private val activity: MainActivity) {
                 "writeText" -> { writeBytes(args.getString(0), args.getString(1).toByteArray()); success(true) }
                 "readBase64" -> success(Base64.encodeToString(readBytes(args.getString(0)), Base64.NO_WRAP))
                 "writeBase64" -> { writeBytes(args.getString(0), Base64.decode(args.getString(1), Base64.DEFAULT)); success(true) }
+                "openRead" -> success(openRead(args.getString(0)))
+                "readChunk" -> success(readChunk(args.getInt(0), args.getInt(1)))
+                "closeRead" -> { closeRead(args.getInt(0)); success(true) }
                 "exists" -> success(exists(args.getString(0)))
                 "remove" -> success(remove(args.getString(0)))
                 "mkdir" -> success(mkdir(args.getString(0)))
@@ -336,6 +340,43 @@ private class NativeBridge(private val activity: MainActivity) {
             return activity.contentResolver.openInputStream(doc.uri)!!.use { it.readBytes() }
         }
         return resolveFile(path).readBytes()
+    }
+
+    // 大きなファイルをJavaヒープに収まるサイズずつ読むためのストリームAPI。
+    // openRead でIDを取得し、readChunk をEOF(空文字)まで繰り返し、closeRead で解放する。
+    private val readStreams = java.util.concurrent.ConcurrentHashMap<Int, java.io.InputStream>()
+    private val nextReadId = java.util.concurrent.atomic.AtomicInteger(1)
+
+    private fun openStream(path: String): java.io.InputStream {
+        if (path.startsWith("saf:")) {
+            val doc = safDocument(path.removePrefix("saf:"), false, false)
+                ?: error("ファイルが見つかりません")
+            return activity.contentResolver.openInputStream(doc.uri) ?: error("ファイルを開けません")
+        }
+        return resolveFile(path).inputStream()
+    }
+
+    private fun openRead(path: String): Int {
+        val id = nextReadId.getAndIncrement()
+        readStreams[id] = openStream(path)
+        return id
+    }
+
+    private fun readChunk(id: Int, length: Int): String {
+        if (length <= 0 || length > 16 * 1024 * 1024) error("チャンクサイズが不正です")
+        val stream = readStreams[id] ?: error("ストリームが開かれていません")
+        val buf = ByteArray(length)
+        var read = 0
+        while (read < length) {
+            val r = stream.read(buf, read, length - read)
+            if (r < 0) break
+            read += r
+        }
+        return if (read <= 0) "" else Base64.encodeToString(buf, 0, read, Base64.NO_WRAP)
+    }
+
+    private fun closeRead(id: Int) {
+        readStreams.remove(id)?.close()
     }
 
     private fun writeBytes(path: String, bytes: ByteArray) {
