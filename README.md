@@ -1,4 +1,4 @@
-# XenoBuilder
+# MedjedBuilder-メジェドビルダー-
 ーHTML,JS,CSSでAndroidアプリをビルドー
 
 HTMLフォルダを、Windows上で署名済みAndroid APKへ変換するオフラインツールです。利用者のPCにJava、Android SDK、Gradle、Pythonは不要です。
