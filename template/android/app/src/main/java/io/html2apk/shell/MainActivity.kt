@@ -315,12 +315,12 @@ private class NativeBridge(private val activity: MainActivity) {
                 "readBase64" -> success(Base64.encodeToString(readBytes(args.getString(0)), Base64.NO_WRAP))
                 "writeBase64" -> { writeBytes(args.getString(0), Base64.decode(args.getString(1), Base64.DEFAULT)); success(true) }
                 "openRead" -> success(openRead(args.getString(0)))
-                "readChunk" -> success(readChunk(args.getInt(0), args.getInt(1)))
+                "readChunk" -> base64Success(readChunk(args.getInt(0), args.getInt(1)))
                 "closeRead" -> { closeRead(args.getInt(0)); success(true) }
                 "extractZipStart" -> success(extractZipStart(args.getString(0), args.getString(1)))
                 "extractZipStatus" -> success(extractZipStatus(args.getInt(0)))
                 "openRandom" -> success(openRandom(args.getString(0)))
-                "readRandom" -> success(readRandom(args.getInt(0), args.getLong(1), args.getInt(2)))
+                "readRandom" -> base64Success(readRandom(args.getInt(0), args.getLong(1), args.getInt(2)))
                 "closeRandom" -> { closeRandom(args.getInt(0)); success(true) }
                 "exists" -> success(exists(args.getString(0)))
                 "remove" -> success(remove(args.getString(0)))
@@ -618,6 +618,10 @@ private class NativeBridge(private val activity: MainActivity) {
     private fun derive(password: String, salt: ByteArray) = javax.crypto.spec.SecretKeySpec(
         SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
             .generateSecret(PBEKeySpec(password.toCharArray(), salt, 150_000, 256)).encoded, "AES")
+
+    // Base64はJSONエスケープ不要な文字のみなので、数MB級の応答は
+    // JSONObject.quote の1文字ずつのエスケープ処理を通さず直接組み立てる(高速)
+    private fun base64Success(value: String): String = "{\"ok\":true,\"value\":\"$value\"}"
 
     private fun success(value: Any?): String = JSONObject().put("ok", true)
         .put("value", value ?: JSONObject.NULL).toString()
