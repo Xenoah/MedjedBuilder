@@ -2,7 +2,7 @@
 ーHTML,JS,CSSでAndroidアプリをビルドー
 「ビルド時間は驚異の最短0.2秒！！」
 Web言語を使って多彩なアプリを作ることができます、
-HTMLフォルダを、Windows上で署名済みAndroid APKへ変換するオフラインツールです。利用者のPCにJava、Android SDK、Gradle、Pythonは不要です。
+Windows上でHTMLフォルダを、APKやAABを作成するツールです。利用者のPCにJava、Android SDK、Gradle、Pythonは不要です。
 
 ## 主な機能
 
