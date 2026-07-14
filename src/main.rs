@@ -22,20 +22,29 @@ struct Project {
     format: OutputFormat,
 }
 
+fn load_app_icon() -> egui::IconData {
+    let image = image::load_from_memory(include_bytes!("../assets/app_icon.png"))
+        .expect("app icon should be a valid PNG")
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    egui::IconData { rgba: image.into_raw(), width, height }
+}
+
 fn main() -> eframe::Result<()> {
     if !ensure_single_instance() {
         return Ok(());
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("Html2Apk")
+            .with_title("MedjedBuilder -メジェドビルダー-")
+            .with_icon(load_app_icon())
             .with_inner_size([720.0, 900.0])
             .with_resizable(false)
             .with_maximize_button(false),
         ..Default::default()
     };
     eframe::run_native(
-        "Html2Apk",
+        "MedjedBuilder",
         options,
         Box::new(|cc| {
             theme::install_fonts(&cc.egui_ctx);
@@ -134,7 +143,7 @@ impl BuilderApp {
                     .unwrap_or("myapp")
                     .to_owned();
                 self.config.app_name = name.clone();
-                self.config.package_id = format!("com.html2apk.{}", slug(&name));
+                self.config.package_id = format!("com.medjedbuilder.{}", slug(&name));
                 self.output_apk = Some(path.with_extension(extension));
                 self.web_root = Some(path);
             });
@@ -238,7 +247,7 @@ impl BuilderApp {
                 let current = self.signing_key.clone();
                 path_picker(ui, "署名鍵（任意）", current.as_ref(), || {
                     rfd::FileDialog::new()
-                        .add_filter("Html2Apk署名鍵", &["h2akey"])
+                        .add_filter("MedjedBuilder署名鍵", &["h2akey"])
                         .pick_file()
                 }, |path| self.signing_key = Some(path));
                 ui.small("未指定の場合はパッケージIDごとの鍵を自動生成し、次回も再利用します。");
@@ -268,7 +277,7 @@ impl BuilderApp {
 
     fn save_project(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Html2Apkプロジェクト", &["h2aproj"])
+            .add_filter("MedjedBuilderプロジェクト", &["h2aproj"])
             .set_file_name(format!("{}.h2aproj", slug(&self.config.app_name)))
             .save_file()
         else {
@@ -293,7 +302,7 @@ impl BuilderApp {
 
     fn load_project(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Html2Apkプロジェクト", &["h2aproj"])
+            .add_filter("MedjedBuilderプロジェクト", &["h2aproj"])
             .pick_file()
         else {
             return;
@@ -343,12 +352,12 @@ fn ensure_single_instance() -> bool {
     use windows_sys::Win32::System::Threading::CreateMutexW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{FindWindowW, SetForegroundWindow};
 
-    let mutex_name: Vec<u16> = "Html2Apk.SingleInstance\0".encode_utf16().collect();
+    let mutex_name: Vec<u16> = "MedjedBuilder.SingleInstance\0".encode_utf16().collect();
     unsafe {
         // ミューテックスはプロセス終了まで保持するため、ハンドルは意図的に閉じない。
         CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr());
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            let title: Vec<u16> = "Html2Apk\0".encode_utf16().collect();
+            let title: Vec<u16> = "MedjedBuilder -メジェドビルダー-\0".encode_utf16().collect();
             let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
             if !hwnd.is_null() {
                 SetForegroundWindow(hwnd);

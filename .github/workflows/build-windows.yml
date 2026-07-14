@@ -49,15 +49,15 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release | Out-Null
-          Copy-Item target/release/html2apk.exe release/Html2Apk.exe
+          Copy-Item target/release/medjedbuilder.exe release/MedjedBuilder.exe
           Copy-Item README.md,LICENSE,SPECIFICATION.md,THIRD_PARTY_NOTICES.md,THIRD_PARTY_LICENSES.html release/
           New-Item -ItemType Directory -Force release/licenses | Out-Null
           Copy-Item licenses/Apache-2.0.txt release/licenses/
           Copy-Item assets/fonts/OFL.txt release/licenses/OFL-LINESeedJP.txt
-          Compress-Archive -Path release/* -DestinationPath Html2Apk-Windows-x64.zip
+          Compress-Archive -Path release/* -DestinationPath MedjedBuilder-Windows-x64.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Html2Apk-Windows-x64
-          path: Html2Apk-Windows-x64.zip
+          name: MedjedBuilder-Windows-x64
+          path: MedjedBuilder-Windows-x64.zip
           if-no-files-found: error

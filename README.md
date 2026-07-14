@@ -1,4 +1,7 @@
 # MedjedBuilder-メジェドビルダー-
+
+<p align="center"><img src="assets/medjed.png" alt="MedjedBuilder" width="320"></p>
+
 ーHTML,JS,CSSでAndroidアプリをビルドー
 「ビルド時間は驚異の最短0.2秒！！」
 Web言語を使って多彩なアプリを作ることができます、
@@ -22,7 +25,7 @@ Windows上でHTMLフォルダから、APKやAABを作成するツールです。
 
 ## 利用者向け
 
-GitHub Actionsの成果物 `Html2Apk-Windows-x64.zip` を展開し、`Html2Apk.exe` を起動します。
+GitHub Actionsの成果物 `MedjedBuilder-Windows-x64.zip` を展開し、`MedjedBuilder.exe` を起動します。
 
 1. `index.html`を含むHTMLフォルダを選択
 2. アプリ情報と必要な権限を設定

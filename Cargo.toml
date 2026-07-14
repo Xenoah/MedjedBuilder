@@ -3,8 +3,16 @@ name = "html2apk"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Offline HTML folder to Android APK builder"
+description = "MedjedBuilder: Offline HTML folder to Android APK builder"
 build = "build.rs"
+
+# 配布名は MedjedBuilder。ライブラリcrate名(html2apk)は内部識別子のため維持する。
+[[bin]]
+name = "medjedbuilder"
+path = "src/main.rs"
+
+[build-dependencies]
+winres = "0.1"
 
 [dependencies]
 anyhow = "1"

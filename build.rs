@@ -3,6 +3,17 @@ use std::{env, fs, path::PathBuf};
 fn main() {
     embed_template("H2A_TEMPLATE_APK", "template/template.apk", "template.apk");
     embed_template("H2A_TEMPLATE_AAB", "template/template.aab", "template.aab");
+    embed_icon();
+}
+
+fn embed_icon() {
+    println!("cargo:rerun-if-changed=assets/app_icon.ico");
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        winres::WindowsResource::new()
+            .set_icon("assets/app_icon.ico")
+            .compile()
+            .expect("failed to embed application icon");
+    }
 }
 
 fn embed_template(env_name: &str, default_path: &str, file_name: &str) {

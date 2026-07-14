@@ -48,7 +48,7 @@ pub fn ensure_key(path: &Path, app_name: &str) -> Result<()> {
     let mut params = CertificateParams::new(Vec::<String>::new())?;
     let mut dn = DistinguishedName::new();
     dn.push(DnType::CommonName, app_name);
-    dn.push(DnType::OrganizationName, "Html2Apk local signing");
+    dn.push(DnType::OrganizationName, "MedjedBuilder local signing");
     params.distinguished_name = dn;
     let certificate = params.self_signed(&cert_key)?;
 

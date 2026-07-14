@@ -25,7 +25,7 @@ pub fn sign_entries(
     certificate_der: &[u8],
     private_key: RsaPrivateKey,
 ) -> Result<JarSignature> {
-    let main_section = b"Manifest-Version: 1.0\r\nCreated-By: Html2Apk\r\n\r\n".to_vec();
+    let main_section = b"Manifest-Version: 1.0\r\nCreated-By: MedjedBuilder\r\n\r\n".to_vec();
     let mut manifest = main_section.clone();
     let mut sections = Vec::with_capacity(entries.len());
     for (name, digest) in entries {
@@ -38,7 +38,7 @@ pub fn sign_entries(
     }
 
     let mut signature_file = Vec::new();
-    signature_file.extend_from_slice(b"Signature-Version: 1.0\r\nCreated-By: Html2Apk\r\n");
+    signature_file.extend_from_slice(b"Signature-Version: 1.0\r\nCreated-By: MedjedBuilder\r\n");
     signature_file.extend_from_slice(&wrap_attribute(
         "SHA-256-Digest-Manifest",
         &STANDARD.encode(Sha256::digest(&manifest)),
