@@ -58,7 +58,8 @@ API一覧は次の通りです。
 
 - `readText`, `writeText`
 - `readBase64`, `writeBase64`
-- `openRead`, `readChunk`, `closeRead`（大きなファイルの分割読み込み。`openRead(path)`でIDを取得し、`readChunk(id, サイズ)`が空文字を返すまで繰り返し、`closeRead(id)`で解放。チャンクは最大16MB）
+- `openRead`, `readChunk`, `closeRead`（大きなファイルの分割読み込み）
+- `extractZipStart`, `extractZipStatus`（ZIPをアプリ専用領域へバックグラウンド展開。`extractZipStart(src, 展開先)`でジョブIDを取得し、`extractZipStatus(id)`を`done`になるまでポーリング。展開後は`toUrl`や`list`でアクセス）
 - `exists`, `remove`, `mkdir`, `list`
 - `encrypt`, `decrypt`
 - `toUrl`, `listMedia`

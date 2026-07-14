@@ -289,8 +289,8 @@ class MainActivity : Activity() {
                 } catch (e) { reject(e); }
               });
               const names = ['readText','writeText','readBase64','writeBase64','openRead','readChunk',
-                'closeRead','exists','remove','mkdir','list','encrypt','decrypt','toUrl','listMedia',
-                'requestStorage','requestCapability'];
+                'closeRead','extractZipStart','extractZipStatus','exists','remove','mkdir','list',
+                'encrypt','decrypt','toUrl','listMedia','requestStorage','requestCapability'];
               window.H2A = { call };
               names.forEach(name => window.H2A[name] = (...args) => call(name, args));
             })();
@@ -316,6 +316,8 @@ private class NativeBridge(private val activity: MainActivity) {
                 "openRead" -> success(openRead(args.getString(0)))
                 "readChunk" -> success(readChunk(args.getInt(0), args.getInt(1)))
                 "closeRead" -> { closeRead(args.getInt(0)); success(true) }
+                "extractZipStart" -> success(extractZipStart(args.getString(0), args.getString(1)))
+                "extractZipStatus" -> success(extractZipStatus(args.getInt(0)))
                 "exists" -> success(exists(args.getString(0)))
                 "remove" -> success(remove(args.getString(0)))
                 "mkdir" -> success(mkdir(args.getString(0)))
@@ -377,6 +379,59 @@ private class NativeBridge(private val activity: MainActivity) {
 
     private fun closeRead(id: Int) {
         readStreams.remove(id)?.close()
+    }
+
+    // ZIPをアプリ専用領域(filesDir/h2a配下)へネイティブスレッドで展開する。
+    // Base64でJSへ転送するよりはるかに速く、展開後は toUrl でファイルを直接表示できる。
+    // extractZipStart でジョブIDを取得し、extractZipStatus を done になるまでポーリングする。
+    private class ExtractJob {
+        @Volatile var done = false
+        @Volatile var count = 0
+        @Volatile var error: String? = null
+    }
+
+    private val extractJobs = java.util.concurrent.ConcurrentHashMap<Int, ExtractJob>()
+
+    private fun extractZipStart(srcPath: String, destDir: String): Int {
+        if (destDir.startsWith("saf:") || destDir.startsWith("ext:") || destDir.startsWith("file:")) {
+            error("展開先はアプリ専用領域のみ指定できます")
+        }
+        val dest = resolveFile(destDir)
+        val id = nextReadId.getAndIncrement()
+        val job = ExtractJob()
+        extractJobs[id] = job
+        Thread {
+            try {
+                if (dest.exists()) dest.deleteRecursively()
+                dest.mkdirs()
+                val charset = try { charset("Shift_JIS") } catch (e: Exception) { Charsets.UTF_8 }
+                java.util.zip.ZipInputStream(openStream(srcPath).buffered(), charset).use { zin ->
+                    while (true) {
+                        val entry = zin.nextEntry ?: break
+                        if (entry.isDirectory) continue
+                        val name = entry.name.replace('\\', '/')
+                        val out = File(dest, name)
+                        // zip-slip対策: 展開先の外に出るエントリは無視する
+                        if (!out.canonicalPath.startsWith(dest.canonicalPath + File.separator)) continue
+                        out.parentFile?.mkdirs()
+                        out.outputStream().use { zin.copyTo(it) }
+                        job.count++
+                    }
+                }
+            } catch (e: Exception) {
+                job.error = e.message ?: e.javaClass.simpleName
+            }
+            job.done = true
+        }.start()
+        return id
+    }
+
+    private fun extractZipStatus(id: Int): JSONObject {
+        val job = extractJobs[id] ?: error("展開ジョブが見つかりません")
+        val result = JSONObject().put("done", job.done).put("count", job.count)
+        job.error?.let { result.put("error", it) }
+        if (job.done) extractJobs.remove(id)
+        return result
     }
 
     private fun writeBytes(path: String, bytes: ByteArray) {
