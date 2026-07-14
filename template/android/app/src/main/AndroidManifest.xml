@@ -12,11 +12,14 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
+    <!-- Android 15 (targetSdk 35) のエッジtoエッジ強制をオプトアウトし、
+         コンテンツをステータスバー/ナビゲーションバーの内側に収める -->
     <application
         android:allowBackup="false"
         android:icon="@drawable/icon_payload"
         android:label="__H2A_APP_NAME__"
         android:largeHeap="true"
+        android:windowOptOutEdgeToEdgeEnforcement="true"
         android:requestLegacyExternalStorage="true"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
