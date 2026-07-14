@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -42,6 +43,12 @@ class MainActivity : Activity() {
         private set
     private var fileChooser: ValueCallback<Array<Uri>>? = null
     private var pendingCapability: String? = null
+
+    // WebView.getUrl()はUIスレッド以外から呼べないため、ページURLをUIスレッドで
+    // キャッシュしてブリッジ(JavaBridgeスレッド)から参照できるようにする
+    @Volatile
+    var currentPageUrl: String? = null
+        private set
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -103,7 +110,16 @@ class MainActivity : Activity() {
                 return false
             }
 
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                currentPageUrl = url
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                currentPageUrl = url
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
+                currentPageUrl = url
                 if (url.startsWith("file:///android_asset/www/")) view.evaluateJavascript(BRIDGE_JS, null)
             }
         }
@@ -284,7 +300,9 @@ class MainActivity : Activity() {
 private class NativeBridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun call(method: String, arguments: String): String {
-        if (activity.webView.url?.startsWith("file:///android_asset/www/") != true) {
+        // このメソッドはJavaBridgeスレッドで実行されるため、WebView.getUrl()は使えない
+        // (UIスレッド外から呼ぶとRuntimeExceptionになる)。キャッシュしたURLで判定する。
+        if (activity.currentPageUrl?.startsWith("file:///android_asset/www/") != true) {
             return failure("このページからはネイティブAPIを使用できません")
         }
         return runCatching {
