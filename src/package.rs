@@ -247,6 +247,10 @@ pub(crate) fn collect_web_files(
         if archive_name.is_empty() || archive_name.split('/').any(|part| part == ".git") {
             continue;
         }
+        // ビルド用プロジェクトファイルはアプリ本体に不要なので同梱しない
+        if archive_name.ends_with(".h2aproj") {
+            continue;
+        }
         files.push((entry.path().to_path_buf(), archive_name));
     }
     files.sort_by(|a, b| a.1.cmp(&b.1));

@@ -244,10 +244,8 @@ impl BuilderApp {
                     ui.label("ステータスバー色");
                     ui.text_edit_singleline(&mut self.config.status_bar_color);
                     ui.end_row();
-                    ui.label("ナビゲーションバー色");
-                    ui.text_edit_singleline(&mut self.config.navigation_bar_color);
-                    ui.end_row();
                 });
+                ui.small("ナビゲーションバーは常に黒で描画されます。");
                 let current = self.signing_key.clone();
                 path_picker(ui, "署名鍵（任意）", current.as_ref(), || {
                     rfd::FileDialog::new()

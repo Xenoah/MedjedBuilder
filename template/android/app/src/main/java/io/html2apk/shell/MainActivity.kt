@@ -51,15 +51,16 @@ class MainActivity : Activity() {
         private set
 
     private var statusBarColor = Color.parseColor("#202124")
-    private var navigationBarColor = Color.BLACK
+
+    // ナビゲーションバーは常に黒で固定する (色変更機能は廃止。
+    // 設定値やOEMの上書きに依存しないため、確実に黒になる)
+    private val navigationBarColor = Color.BLACK
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         config = assets.open("app.json").bufferedReader().use { JSONObject(it.readText()) }
         statusBarColor = runCatching { Color.parseColor(config.optString("status_bar_color")) }
             .getOrDefault(statusBarColor)
-        navigationBarColor = runCatching { Color.parseColor(config.optString("navigation_bar_color")) }
-            .getOrDefault(navigationBarColor)
         applyWindowOptions()
         webView = WebView(this)
         if (config.optBoolean("disable_splash")) {
@@ -149,11 +150,8 @@ class MainActivity : Activity() {
             flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
         }
         if (Build.VERSION.SDK_INT >= 27) {
-            flags = if (Color.luminance(navigationBarColor) > 0.5f) {
-                flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-            } else {
-                flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
-            }
+            // ナビゲーションバーは黒固定のためアイコンは常に明色
+            flags = flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
         }
         window.decorView.systemUiVisibility = flags
         if (config.optBoolean("keep_screen_on")) {
