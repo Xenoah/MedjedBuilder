@@ -17,13 +17,32 @@ use zip::{write::FileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 const TEMPLATE_APK: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/template.apk"));
 const MAX_WEB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-pub(crate) const ICON_PATHS: &[(&str, u32)] = &[
-    ("res/drawable-mdpi/icon_payload.png", 48),
-    ("res/drawable-hdpi/icon_payload.png", 72),
-    ("res/drawable-xhdpi/icon_payload.png", 96),
-    ("res/drawable-xxhdpi/icon_payload.png", 144),
-    ("res/drawable-xxxhdpi/icon_payload.png", 192),
+
+/// アイコンの密度キーワードと出力ピクセルサイズ。
+pub(crate) const ICON_DENSITIES: &[(&str, u32)] = &[
+    ("mdpi", 48),
+    ("hdpi", 72),
+    ("xhdpi", 96),
+    ("xxhdpi", 144),
+    ("xxxhdpi", 192),
 ];
+
+/// テンプレート内エントリがアイコン差し替え対象なら出力サイズを返す。
+/// aapt2はフォルダ名へ`-v4`等の修飾子を付けることがあるため、固定パスの
+/// 完全一致ではなく「drawable-<密度>」ディレクトリ + `icon_payload.png` で照合する。
+pub(crate) fn icon_density_for(name: &str) -> Option<u32> {
+    let file = name.rsplit('/').next()?;
+    if file != "icon_payload.png" {
+        return None;
+    }
+    ICON_DENSITIES.iter().find_map(|(density, size)| {
+        let dir = format!("drawable-{density}");
+        let matched = name.split('/').any(|part| {
+            part == dir || part.strip_prefix(dir.as_str()).is_some_and(|rest| rest.starts_with('-'))
+        });
+        if matched { Some(*size) } else { None }
+    })
+}
 
 #[derive(Debug, Clone)]
 pub struct BuildRequest {
@@ -79,11 +98,12 @@ fn write_unsigned_apk(
     let mut writer = ZipWriter::new(output);
     let replacements = manifest_replacements(&request.config);
     let icon_data = prepare_icons(request.icon.as_deref())?;
+    let mut replaced_icons = 0usize;
 
     for index in 0..template.len() {
         let mut entry = template.by_index(index)?;
         let name = entry.name().replace('\\', "/");
-        if should_replace(&name, request.icon.is_some()) || entry.is_dir() {
+        if should_replace(&name) || entry.is_dir() {
             continue;
         }
         let mut data = Vec::with_capacity(entry.size() as usize);
@@ -97,12 +117,26 @@ fn write_unsigned_apk(
                 request.config.disable_splash,
             )?;
         }
+        // アイコンはテンプレート内の実際のエントリ名を保ったまま中身だけ差し替える
+        // （パスを決め打ちして追加すると、リソーステーブルが参照しない
+        //  死にエントリになりアイコンが反映されない）
+        if let Some(icons) = &icon_data {
+            if let Some(size) = icon_density_for(&name) {
+                if let Some(bytes) = icons.get(&size) {
+                    data = bytes.clone();
+                    replaced_icons += 1;
+                }
+            }
+        }
         let compression = if name == "resources.arsc" || name.starts_with("lib/") {
             CompressionMethod::Stored
         } else {
             CompressionMethod::Deflated
         };
         write_entry(&mut writer, &name, &data, compression, alignment_for(&name))?;
+    }
+    if icon_data.is_some() && replaced_icons == 0 {
+        bail!("テンプレート内にicon_payload.pngが見つからず、アイコンを差し替えられません");
     }
 
     write_entry(
@@ -122,9 +156,6 @@ fn write_unsigned_apk(
             CompressionMethod::Deflated,
             1,
         )?;
-    }
-    for (name, data) in icon_data {
-        write_entry(&mut writer, &name, &data, CompressionMethod::Stored, 4)?;
     }
     writer.finish()?;
     Ok(())
@@ -193,26 +224,26 @@ pub(crate) fn collect_web_files(
     Ok(files)
 }
 
-pub(crate) fn prepare_icons(icon: Option<&Path>) -> Result<BTreeMap<String, Vec<u8>>> {
-    let mut output = BTreeMap::new();
+/// 指定画像を各密度サイズのPNGへ変換する（サイズ → PNGバイト列）。
+pub(crate) fn prepare_icons(icon: Option<&Path>) -> Result<Option<BTreeMap<u32, Vec<u8>>>> {
     let Some(icon) = icon else {
-        return Ok(output);
+        return Ok(None);
     };
     let source = image::open(icon).context("アイコン画像を開けません")?;
-    for (path, size) in ICON_PATHS {
+    let mut output = BTreeMap::new();
+    for (_, size) in ICON_DENSITIES {
         let resized = source.resize_exact(*size, *size, FilterType::Lanczos3);
         let mut bytes = Cursor::new(Vec::new());
         resized.write_to(&mut bytes, ImageFormat::Png)?;
-        output.insert((*path).to_string(), bytes.into_inner());
+        output.insert(*size, bytes.into_inner());
     }
-    Ok(output)
+    Ok(Some(output))
 }
 
-fn should_replace(name: &str, replacing_icon: bool) -> bool {
+fn should_replace(name: &str) -> bool {
     name.starts_with("META-INF/")
         || name.starts_with("assets/www/")
         || name == "assets/app.json"
-        || replacing_icon && ICON_PATHS.iter().any(|(icon, _)| *icon == name)
 }
 
 fn alignment_for(name: &str) -> u64 {
@@ -271,6 +302,18 @@ pub(crate) fn manifest_replacements(config: &AppConfig) -> HashMap<String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn icon_density_matches_plain_and_versioned_paths() {
+        assert_eq!(icon_density_for("res/drawable-mdpi/icon_payload.png"), Some(48));
+        assert_eq!(icon_density_for("res/drawable-hdpi-v4/icon_payload.png"), Some(72));
+        assert_eq!(icon_density_for("base/res/drawable-xhdpi-v4/icon_payload.png"), Some(96));
+        assert_eq!(icon_density_for("res/drawable-xxhdpi-v4/icon_payload.png"), Some(144));
+        assert_eq!(icon_density_for("res/drawable-xxxhdpi/icon_payload.png"), Some(192));
+        assert_eq!(icon_density_for("res/Hu.png"), None);
+        assert_eq!(icon_density_for("res/drawable-xxhdpi/other.png"), None);
+        assert_eq!(icon_density_for("assets/www/drawable-mdpi/icon_payload.png"), Some(48));
+    }
 
     #[test]
     fn builds_and_verifies_fixture_apk() {

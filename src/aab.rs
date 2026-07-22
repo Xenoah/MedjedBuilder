@@ -5,7 +5,7 @@
 
 use crate::{
     bundle_proto, jarsign,
-    package::{collect_web_files, manifest_replacements, prepare_icons, BuildRequest, ICON_PATHS},
+    package::{collect_web_files, icon_density_for, manifest_replacements, prepare_icons, BuildRequest},
     signing::{default_key_path, ensure_key, load_key},
     validate::validate_request,
 };
@@ -70,12 +70,13 @@ fn write_signed_aab(
     let mut writer = ZipWriter::new(output);
     let replacements = manifest_replacements(&request.config);
     let icon_data = prepare_icons(request.icon.as_deref())?;
+    let mut replaced_icons = 0usize;
     let mut digests: Vec<(String, [u8; 32])> = Vec::new();
 
     for index in 0..template.len() {
         let mut entry = template.by_index(index)?;
         let name = entry.name().replace('\\', "/");
-        if should_replace(&name, request.icon.is_some()) || entry.is_dir() {
+        if should_replace(&name) || entry.is_dir() {
             continue;
         }
         let mut data = Vec::with_capacity(entry.size() as usize);
@@ -89,7 +90,20 @@ fn write_signed_aab(
                 request.config.disable_splash,
             )?;
         }
+        // アイコンはテンプレート内の実エントリ（`-v4`等の修飾付きパスを含む）を
+        // 名前で照合して中身だけ差し替える
+        if let Some(icons) = &icon_data {
+            if let Some(size) = icon_density_for(&name) {
+                if let Some(bytes) = icons.get(&size) {
+                    data = bytes.clone();
+                    replaced_icons += 1;
+                }
+            }
+        }
         write_tracked(&mut writer, &mut digests, &name, &data)?;
+    }
+    if icon_data.is_some() && replaced_icons == 0 {
+        bail!("テンプレート内にicon_payload.pngが見つからず、アイコンを差し替えられません");
     }
 
     write_tracked(
@@ -108,9 +122,6 @@ fn write_signed_aab(
             &data,
         )?;
     }
-    for (name, data) in icon_data {
-        write_tracked(&mut writer, &mut digests, &format!("base/{name}"), &data)?;
-    }
 
     let signature = jarsign::sign_entries(&digests, certificate_der, private_key)?;
     write_plain(&mut writer, "META-INF/MANIFEST.MF", &signature.manifest)?;
@@ -120,14 +131,10 @@ fn write_signed_aab(
     Ok(())
 }
 
-fn should_replace(name: &str, replacing_icon: bool) -> bool {
+fn should_replace(name: &str) -> bool {
     name.starts_with("META-INF/")
         || name.starts_with("base/assets/www/")
         || name == "base/assets/app.json"
-        || replacing_icon
-            && ICON_PATHS
-                .iter()
-                .any(|(icon, _)| name.strip_prefix("base/") == Some(icon))
 }
 
 fn write_tracked<W: Write + std::io::Seek>(

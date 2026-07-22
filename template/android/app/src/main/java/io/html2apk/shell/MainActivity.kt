@@ -50,20 +50,70 @@ class MainActivity : Activity() {
     var currentPageUrl: String? = null
         private set
 
+    private var statusBarColor = Color.parseColor("#202124")
+    private var navigationBarColor = Color.BLACK
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         config = assets.open("app.json").bufferedReader().use { JSONObject(it.readText()) }
+        statusBarColor = runCatching { Color.parseColor(config.optString("status_bar_color")) }
+            .getOrDefault(statusBarColor)
+        navigationBarColor = runCatching { Color.parseColor(config.optString("navigation_bar_color")) }
+            .getOrDefault(navigationBarColor)
         applyWindowOptions()
         webView = WebView(this)
         if (config.optBoolean("disable_splash")) {
             // 半透明テーマ利用時、ページ描画までWebViewの白背景が見えないようにする
             webView.setBackgroundColor(Color.TRANSPARENT)
         }
-        setContentView(webView)
+        setContentView(buildRootLayout())
         configureWebView()
         val page = config.optString("start_page", "index.html")
             .split('/').joinToString("/") { Uri.encode(it) }
         webView.loadUrl("file:///android_asset/www/$page")
+    }
+
+    /// Android 15+のエッジtoエッジ強制や半透明テーマでは、システムバーの背後に
+    /// WebViewが素通しで描画されてバーが白く見える。バーと重なる領域を
+    /// 設定色のパディングビューで埋め、WebView本体はバーの内側に収める。
+    private fun buildRootLayout(): View {
+        val root = android.widget.LinearLayout(this)
+        root.orientation = android.widget.LinearLayout.VERTICAL
+        val statusPad = View(this).apply { setBackgroundColor(statusBarColor) }
+        val navPad = View(this).apply { setBackgroundColor(navigationBarColor) }
+        val match = android.widget.LinearLayout.LayoutParams.MATCH_PARENT
+        root.addView(statusPad, android.widget.LinearLayout.LayoutParams(match, 0))
+        root.addView(webView, android.widget.LinearLayout.LayoutParams(match, 0, 1f))
+        root.addView(navPad, android.widget.LinearLayout.LayoutParams(match, 0))
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val top: Int
+            val bottom: Int
+            val left: Int
+            val right: Int
+            if (Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(
+                    android.view.WindowInsets.Type.systemBars() or
+                        android.view.WindowInsets.Type.displayCutout() or
+                        android.view.WindowInsets.Type.ime()
+                )
+                top = bars.top; bottom = bars.bottom; left = bars.left; right = bars.right
+            } else {
+                @Suppress("DEPRECATION")
+                run {
+                    top = insets.systemWindowInsetTop
+                    bottom = insets.systemWindowInsetBottom
+                    left = insets.systemWindowInsetLeft
+                    right = insets.systemWindowInsetRight
+                }
+            }
+            statusPad.layoutParams = statusPad.layoutParams.apply { height = top }
+            navPad.layoutParams = navPad.layoutParams.apply { height = bottom }
+            root.setPadding(left, 0, right, 0)
+            statusPad.requestLayout()
+            navPad.requestLayout()
+            insets
+        }
+        return root
     }
 
     private fun applyWindowOptions() {
@@ -76,16 +126,31 @@ class MainActivity : Activity() {
                 else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
         }
+        var flags = window.decorView.systemUiVisibility
         if (config.optBoolean("fullscreen")) {
-            window.decorView.systemUiVisibility =
-                View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                    View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            flags = flags or View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
         }
+        // バー背景色の輝度に合わせてバーアイコンの明暗を切り替える
+        // (暗色バーで黒アイコンのまま視認できなくなるのを防ぐ)
+        flags = if (Color.luminance(statusBarColor) > 0.5f) {
+            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        } else {
+            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        }
+        if (Build.VERSION.SDK_INT >= 27) {
+            flags = if (Color.luminance(navigationBarColor) > 0.5f) {
+                flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            } else {
+                flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+            }
+        }
+        window.decorView.systemUiVisibility = flags
         if (config.optBoolean("keep_screen_on")) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        runCatching { window.statusBarColor = Color.parseColor(config.optString("status_bar_color")) }
-        runCatching { window.navigationBarColor = Color.parseColor(config.optString("navigation_bar_color")) }
+        runCatching { window.statusBarColor = statusBarColor }
+        runCatching { window.navigationBarColor = navigationBarColor }
     }
 
     @Suppress("SetJavaScriptEnabled")
