@@ -62,6 +62,8 @@ API一覧は次の通りです。
 - `openRead`, `readChunk`, `closeRead`（大きなファイルの分割読み込み）
 - `openRandom`, `readRandom`, `closeRandom`（ランダムアクセス読み込み。`openRandom(path)`が`{id, size}`を返し、`readRandom(id, オフセット, サイズ)`で任意の位置を読む。ZIP等の一部だけを読む用途に最適。チャンクは最大16MB）
 - `extractZipStart`, `extractZipStatus`（ZIPをアプリ専用領域へバックグラウンド展開。`extractZipStart(src, 展開先)`でジョブIDを取得し、`extractZipStatus(id)`を`done`になるまでポーリング。展開後は`toUrl`や`list`でアクセス）
+- `extractZipEntryAt`（ZIP内の1エントリだけをローカルヘッダのオフセット指定でアプリ専用領域へ即時展開。`extractZipEntryAt(src, offset, 圧縮サイズ, 圧縮方式, 展開先)`。巨大アーカイブ内の音声トラック等を全体展開を待たずに取り出して`toUrl`で再生できる）
+- `copyIn`（SAF等のファイルをアプリ専用領域へネイティブ速度でコピー。`copyIn(src, コピー先)`）
 - `exists`, `remove`, `mkdir`, `list`
 - `encrypt`, `decrypt`
 - `toUrl`, `listMedia`

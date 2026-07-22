@@ -370,6 +370,7 @@ class MainActivity : Activity() {
               });
               const names = ['readText','writeText','readBase64','writeBase64','openRead','readChunk',
                 'closeRead','openRandom','readRandom','closeRandom','extractZipStart','extractZipStatus',
+                'extractZipEntryAt','copyIn',
                 'exists','remove','mkdir','list','encrypt','decrypt','toUrl','listMedia',
                 'requestStorage','requestCapability'];
               window.H2A = { call };
@@ -399,6 +400,10 @@ private class NativeBridge(private val activity: MainActivity) {
                 "closeRead" -> { closeRead(args.getInt(0)); success(true) }
                 "extractZipStart" -> success(extractZipStart(args.getString(0), args.getString(1)))
                 "extractZipStatus" -> success(extractZipStatus(args.getInt(0)))
+                "extractZipEntryAt" -> success(
+                    extractZipEntryAt(args.getString(0), args.getLong(1), args.getLong(2), args.getInt(3), args.getString(4))
+                )
+                "copyIn" -> { copyIn(args.getString(0), args.getString(1)); success(true) }
                 "openRandom" -> success(openRandom(args.getString(0)))
                 "readRandom" -> base64Success(readRandom(args.getInt(0), args.getLong(1), args.getInt(2)))
                 "closeRandom" -> { closeRandom(args.getInt(0)); success(true) }
@@ -552,6 +557,99 @@ private class NativeBridge(private val activity: MainActivity) {
             job.done = true
         }.start()
         return id
+    }
+
+    // ZIP内の1エントリだけを、呼び出し側が指定するローカルヘッダのオフセットから
+    // 直接展開する。ZIP全体の走査が不要なため、巨大アーカイブ内の音声トラック等を
+    // 数百ミリ秒でアプリ専用領域へ取り出して即再生できる。
+    private fun extractZipEntryAt(
+        srcPath: String,
+        offset: Long,
+        compressedSize: Long,
+        method: Int,
+        destPath: String,
+    ): Boolean {
+        if (destPath.startsWith("saf:") || destPath.startsWith("ext:") || destPath.startsWith("file:")) {
+            error("展開先はアプリ専用領域のみ指定できます")
+        }
+        if (method != 0 && method != 8) error("未対応の圧縮方式です")
+        val out = resolveFile(destPath)
+        if (out.exists() && out.length() > 0) return true
+        out.parentFile?.mkdirs()
+        val source = if (srcPath.startsWith("saf:")) {
+            val doc = safDocument(srcPath.removePrefix("saf:"), false, false) ?: error("ファイルが見つかりません")
+            val pfd = activity.contentResolver.openFileDescriptor(doc.uri, "r") ?: error("ファイルを開けません")
+            RandomSource(pfd, java.io.FileInputStream(pfd.fileDescriptor))
+        } else {
+            RandomSource(null, java.io.FileInputStream(resolveFile(srcPath)))
+        }
+        try {
+            val channel = source.channel
+            val header = java.nio.ByteBuffer.allocate(30).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            var pos = offset
+            while (header.hasRemaining()) {
+                val r = channel.read(header, pos)
+                if (r < 0) break
+                pos += r
+            }
+            header.flip()
+            if (header.remaining() < 30 || header.int != 0x04034b50) error("ZIPローカルヘッダが不正です")
+            header.position(26)
+            val nameLen = header.short.toInt() and 0xffff
+            val extraLen = header.short.toInt() and 0xffff
+            val dataStart = offset + 30 + nameLen + extraLen
+            // Inflater(nowrap)は終端判定にダミー1バイトを要求するため +1 バイト許容する
+            val raw = object : java.io.InputStream() {
+                var readPos = dataStart
+                var remaining = compressedSize + 1
+                override fun read(): Int {
+                    val one = ByteArray(1)
+                    val n = read(one, 0, 1)
+                    return if (n < 0) -1 else one[0].toInt() and 0xff
+                }
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    if (remaining <= 0L) return -1
+                    val want = minOf(len.toLong(), remaining).toInt()
+                    val buffer = java.nio.ByteBuffer.wrap(b, off, want)
+                    val n = channel.read(buffer, readPos)
+                    if (n <= 0) return -1
+                    readPos += n
+                    remaining -= n
+                    return n
+                }
+            }
+            val input = if (method == 8) {
+                java.util.zip.InflaterInputStream(raw, java.util.zip.Inflater(true), 64 * 1024)
+            } else raw
+            val tmp = File(out.parentFile, out.name + ".part")
+            input.use { decoded -> tmp.outputStream().use { decoded.copyTo(it) } }
+            if (!tmp.renameTo(out)) {
+                tmp.copyTo(out, true)
+                tmp.delete()
+            }
+            return true
+        } finally {
+            runCatching { source.channel.close() }
+            runCatching { source.stream.close() }
+            runCatching { source.pfd?.close() }
+        }
+    }
+
+    // SAF等のファイルをアプリ専用領域へネイティブ速度でコピーする。
+    // Base64ブリッジ転送より大幅に速く、コピー後はtoUrlで直接再生できる。
+    private fun copyIn(srcPath: String, destPath: String) {
+        if (destPath.startsWith("saf:") || destPath.startsWith("ext:") || destPath.startsWith("file:")) {
+            error("コピー先はアプリ専用領域のみ指定できます")
+        }
+        val out = resolveFile(destPath)
+        if (out.exists() && out.length() > 0) return
+        out.parentFile?.mkdirs()
+        val tmp = File(out.parentFile, out.name + ".part")
+        openStream(srcPath).use { input -> tmp.outputStream().use { input.copyTo(it) } }
+        if (!tmp.renameTo(out)) {
+            tmp.copyTo(out, true)
+            tmp.delete()
+        }
     }
 
     private fun extractZipStatus(id: Int): JSONObject {
