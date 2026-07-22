@@ -127,42 +127,13 @@ class MainActivity : Activity() {
                 else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
         }
-        var flags = window.decorView.systemUiVisibility
-        if (config.optBoolean("fullscreen")) {
-            flags = flags or View.SYSTEM_UI_FLAG_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-        }
-        // 全バージョンで明示的にエッジtoエッジ化する。バー自体は完全透明にし、
-        // バー領域の背景はインセット追従のパディングビュー(設定色)で描画する。
-        // OSバージョンやOEM(MIUI等)がnavigationBarColor指定を無視・上書きしても
-        // 「システムは何も描かない」ため、バーが白くなる問題が原理的に起きない。
+        // 全バージョンで明示的にエッジtoエッジ化する。バー領域の背景は
+        // インセット追従のパディングビュー(黒)で描画する。
         if (Build.VERSION.SDK_INT >= 30) {
             window.setDecorFitsSystemWindows(false)
-        } else {
-            flags = flags or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         }
-        // バー背景色の輝度に合わせてバーアイコンの明暗を切り替える
-        // (暗色バーで黒アイコンのまま視認できなくなるのを防ぐ)
-        flags = if (Color.luminance(statusBarColor) > 0.5f) {
-            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-        } else {
-            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
-        }
-        if (Build.VERSION.SDK_INT >= 27) {
-            // ナビゲーションバーは黒固定のためアイコンは常に明色
-            flags = flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
-        }
-        window.decorView.systemUiVisibility = flags
         if (config.optBoolean("keep_screen_on")) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
-        runCatching { window.statusBarColor = Color.TRANSPARENT }
-        runCatching { window.navigationBarColor = Color.TRANSPARENT }
-        if (Build.VERSION.SDK_INT >= 29) {
-            // 透明バーへの白っぽいコントラストスクリム強制を無効化する
-            window.isStatusBarContrastEnforced = false
-            window.isNavigationBarContrastEnforced = false
         }
         if (Build.VERSION.SDK_INT >= 28) {
             // ノッチ/パンチホール領域にも背景を描画する
@@ -171,6 +142,60 @@ class MainActivity : Activity() {
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             }
         }
+        applySystemBarAppearance()
+    }
+
+    /// システムバーの外観を適用する。MIUI/HyperOS等のOEMは
+    /// ライト/ダーク外観からバー背景を独自に描いたり、フォーカス変化で
+    /// 設定をリセットしたりするため、onWindowFocusChangedからも再適用する。
+    private fun applySystemBarAppearance() {
+        var flags = window.decorView.systemUiVisibility
+        if (config.optBoolean("fullscreen")) {
+            flags = flags or View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+        }
+        if (Build.VERSION.SDK_INT < 30) {
+            flags = flags or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
+        // ステータスバーのアイコン明暗は設定色の輝度から決める
+        flags = if (Color.luminance(statusBarColor) > 0.5f) {
+            flags or View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        } else {
+            flags and View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR.inv()
+        }
+        if (Build.VERSION.SDK_INT >= 27) {
+            // ナビゲーションバーは黒固定のため常にダーク外観 (アイコンは明色)
+            flags = flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        }
+        window.decorView.systemUiVisibility = flags
+        if (Build.VERSION.SDK_INT >= 30) {
+            // モダンAPIでも外観を明示する (OEMがこちらだけを参照する場合がある)
+            val controller = window.insetsController
+            if (controller != null) {
+                val mask = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                val value = if (Color.luminance(statusBarColor) > 0.5f) {
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                } else 0
+                controller.setSystemBarsAppearance(value, mask)
+            }
+        }
+        // ステータスバーは透明(パディングビューが設定色で塗る)。
+        // ナビゲーションバーは不透明の黒を明示する: 透明指定を無視して
+        // 独自に塗るOEMでも、不透明黒なら黒が描かれる。
+        runCatching { window.statusBarColor = Color.TRANSPARENT }
+        runCatching { window.navigationBarColor = Color.BLACK }
+        if (Build.VERSION.SDK_INT >= 29) {
+            // 透明バーへの白っぽいコントラストスクリム強制を無効化する
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applySystemBarAppearance()
     }
 
     @Suppress("SetJavaScriptEnabled")

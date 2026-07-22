@@ -1,6 +1,6 @@
 [package]
 name = "html2apk"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 license = "MIT"
 description = "MedjedBuilder: Offline HTML folder to Android APK builder"
