@@ -35,13 +35,14 @@ jobs:
           if (-not $apk) { throw "release APK not found in $apkDir" }
           Copy-Item $apk.FullName template/template.apk
           Copy-Item template/android/app/build/outputs/bundle/release/app-release.aab template/template.aab
-          # アイコン差し替えが機能する前提条件 (icon_payload.png のパスが短縮されていないこと) を検証
+          # アイコン差し替えの前提条件 (res配下にPNGが5密度分あること) を検証
+          # ※パスはAGPの最適化で短縮される場合があるため、名前ではなく個数で確認する
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path template/template.apk))
-          $icons = @($zip.Entries | Where-Object { $_.FullName -like "*icon_payload.png" })
+          $pngs = @($zip.Entries | Where-Object { $_.FullName -like "res/*.png" -or $_.FullName -like "*icon_payload.png" })
           $zip.Dispose()
-          Write-Host "icon entries in template.apk: $($icons.Count)"
-          if ($icons.Count -lt 5) { throw "icon_payload.png entries missing in template.apk (resource path shortening still active?)" }
+          Write-Host "png entries in template.apk res/: $($pngs.Count)"
+          if ($pngs.Count -lt 5) { throw "icon png entries missing in template.apk" }
 
       - uses: dtolnay/rust-toolchain@stable
 

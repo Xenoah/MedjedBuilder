@@ -5,7 +5,7 @@
 
 use crate::{
     bundle_proto, jarsign,
-    package::{collect_web_files, icon_density_for, manifest_replacements, prepare_icons, BuildRequest},
+    package::{collect_web_files, icon_target_size, manifest_replacements, prepare_icons, BuildRequest},
     signing::{default_key_path, ensure_key, load_key},
     validate::validate_request,
 };
@@ -90,10 +90,10 @@ fn write_signed_aab(
                 request.config.disable_splash,
             )?;
         }
-        // アイコンはテンプレート内の実エントリ（`-v4`等の修飾付きパスを含む）を
-        // 名前で照合して中身だけ差し替える
+        // アイコンはテンプレート内の実エントリ（`-v4`等の修飾付きパスや
+        // 短縮パスを含む）を名前またはPNG寸法で照合して中身だけ差し替える
         if let Some(icons) = &icon_data {
-            if let Some(size) = icon_density_for(&name) {
+            if let Some(size) = icon_target_size(&name, &data) {
                 if let Some(bytes) = icons.get(&size) {
                     data = bytes.clone();
                     replaced_icons += 1;

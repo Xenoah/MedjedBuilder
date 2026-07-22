@@ -44,6 +44,35 @@ pub(crate) fn icon_density_for(name: &str) -> Option<u32> {
     })
 }
 
+/// PNGヘッダー(IHDR)から幅・高さを読み取る。
+fn png_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 24 || &data[0..8] != b"\x89PNG\r\n\x1a\n" || &data[12..16] != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(data[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(data[20..24].try_into().ok()?);
+    Some((width, height))
+}
+
+/// エントリ名または中身(PNG寸法)からアイコン差し替え対象を判定する。
+/// AGPのリソース最適化はres配下のパスを `res/xx.png` へ短縮するため、
+/// パスで判定できない場合はPNGの実寸法（48/72/96/144/192の正方形）で照合する。
+/// テンプレートAPKのres配下のPNGはアイコン5枚のみなので誤検出しない。
+pub(crate) fn icon_target_size(name: &str, data: &[u8]) -> Option<u32> {
+    if let Some(size) = icon_density_for(name) {
+        return Some(size);
+    }
+    let in_res = name.starts_with("res/") || name.starts_with("base/res/");
+    if !in_res || !name.ends_with(".png") {
+        return None;
+    }
+    let (width, height) = png_dimensions(data)?;
+    if width != height {
+        return None;
+    }
+    ICON_DENSITIES.iter().find_map(|(_, size)| if *size == width { Some(*size) } else { None })
+}
+
 #[derive(Debug, Clone)]
 pub struct BuildRequest {
     pub web_root: PathBuf,
@@ -121,7 +150,7 @@ fn write_unsigned_apk(
         // （パスを決め打ちして追加すると、リソーステーブルが参照しない
         //  死にエントリになりアイコンが反映されない）
         if let Some(icons) = &icon_data {
-            if let Some(size) = icon_density_for(&name) {
+            if let Some(size) = icon_target_size(&name, &data) {
                 if let Some(bytes) = icons.get(&size) {
                     data = bytes.clone();
                     replaced_icons += 1;
@@ -302,6 +331,29 @@ pub(crate) fn manifest_replacements(config: &AppConfig) -> HashMap<String, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn png_header(width: u32, height: u32) -> Vec<u8> {
+        let mut data = b"\x89PNG\r\n\x1a\n".to_vec();
+        data.extend_from_slice(&13u32.to_be_bytes());
+        data.extend_from_slice(b"IHDR");
+        data.extend_from_slice(&width.to_be_bytes());
+        data.extend_from_slice(&height.to_be_bytes());
+        data.extend_from_slice(&[8, 6, 0, 0, 0]);
+        data
+    }
+
+    #[test]
+    fn icon_target_matches_shortened_paths_by_dimensions() {
+        assert_eq!(icon_target_size("res/Hu.png", &png_header(72, 72)), Some(72));
+        assert_eq!(icon_target_size("res/qJ.png", &png_header(192, 192)), Some(192));
+        assert_eq!(icon_target_size("base/res/aB.png", &png_header(48, 48)), Some(48));
+        // 正方形でない・密度外サイズ・res外は対象にしない
+        assert_eq!(icon_target_size("res/xx.png", &png_header(72, 96)), None);
+        assert_eq!(icon_target_size("res/xx.png", &png_header(100, 100)), None);
+        assert_eq!(icon_target_size("assets/www/img.png", &png_header(72, 72)), None);
+        // フルパスならPNG寸法に関わらず対象
+        assert_eq!(icon_target_size("res/drawable-mdpi-v4/icon_payload.png", &[]), Some(48));
+    }
 
     #[test]
     fn icon_density_matches_plain_and_versioned_paths() {
