@@ -228,10 +228,11 @@ pub fn patch_manifest(
     replacements: &HashMap<String, String>,
     version_code: u32,
     allow_cleartext_http: bool,
+    disable_splash: bool,
 ) -> Result<Vec<u8>> {
     let mut root =
         XmlNode::decode(manifest).context("AAB内のAndroidManifest.xmlを解析できません")?;
-    patch_node(&mut root, replacements, version_code, allow_cleartext_http);
+    patch_node(&mut root, replacements, version_code, allow_cleartext_http, disable_splash);
     Ok(root.encode_to_vec())
 }
 
@@ -259,6 +260,7 @@ fn patch_node(
     replacements: &HashMap<String, String>,
     version_code: u32,
     allow_cleartext_http: bool,
+    disable_splash: bool,
 ) {
     let Some(xml_node::Node::Element(element)) = &mut node.node else {
         return;
@@ -282,9 +284,21 @@ fn patch_node(
                 primitive::OneofValue::BooleanValue(allow_cleartext_http),
             );
         }
+        if disable_splash && attribute.name == "theme" {
+            // 半透明のフレームワーク公開テーマへ差し替えて起動スプラッシュを抑止する
+            attribute.value = "@android:style/Theme.Translucent.NoTitleBar".into();
+            if let Some(item::Value::Ref(reference)) = attribute
+                .compiled_item
+                .as_mut()
+                .and_then(|item| item.value.as_mut())
+            {
+                reference.id = crate::axml::THEME_TRANSLUCENT_NO_TITLE_BAR;
+                reference.name = "android:style/Theme.Translucent.NoTitleBar".into();
+            }
+        }
     }
     for child in &mut element.child {
-        patch_node(child, replacements, version_code, allow_cleartext_http);
+        patch_node(child, replacements, version_code, allow_cleartext_http, disable_splash);
     }
 }
 
@@ -376,7 +390,7 @@ mod tests {
             ("io.html2apk.generated".to_string(), "com.example.app".to_string()),
             ("__H2A_APP_NAME__".to_string(), "テスト".to_string()),
         ]);
-        let patched = patch_manifest(&encoded, &replacements, 42, true).unwrap();
+        let patched = patch_manifest(&encoded, &replacements, 42, true, false).unwrap();
         let decoded = XmlNode::decode(patched.as_slice()).unwrap();
         let Some(xml_node::Node::Element(manifest)) = &decoded.node else {
             panic!("manifest要素がありません");
@@ -393,5 +407,75 @@ mod tests {
             panic!("labelのcompiled_itemが失われました");
         };
         assert_eq!(label.value, "テスト");
+    }
+
+    fn manifest_with_theme() -> XmlNode {
+        let mut root = sample_manifest();
+        let Some(xml_node::Node::Element(manifest)) = &mut root.node else {
+            panic!("manifest要素がありません");
+        };
+        let Some(xml_node::Node::Element(application)) = &mut manifest.child[0].node else {
+            panic!("application要素がありません");
+        };
+        application.attribute.push(XmlAttribute {
+            namespace_uri: "http://schemas.android.com/apk/res/android".into(),
+            name: "theme".into(),
+            value: "@style/AppTheme".into(),
+            source: None,
+            resource_id: 0x01010000,
+            compiled_item: Some(Item {
+                value: Some(item::Value::Ref(Reference {
+                    r#type: 0,
+                    id: 0x7f03_0000,
+                    name: "style/AppTheme".into(),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            }),
+        });
+        root
+    }
+
+    #[test]
+    fn disable_splash_swaps_theme_to_translucent() {
+        let encoded = manifest_with_theme().encode_to_vec();
+        let patched = patch_manifest(&encoded, &HashMap::new(), 1, false, true).unwrap();
+        let decoded = XmlNode::decode(patched.as_slice()).unwrap();
+        let Some(xml_node::Node::Element(manifest)) = &decoded.node else {
+            panic!("manifest要素がありません");
+        };
+        let Some(xml_node::Node::Element(application)) = &manifest.child[0].node else {
+            panic!("application要素がありません");
+        };
+        let theme = application
+            .attribute
+            .iter()
+            .find(|a| a.name == "theme")
+            .expect("theme属性がありません");
+        assert_eq!(theme.value, "@android:style/Theme.Translucent.NoTitleBar");
+        let Some(Item { value: Some(item::Value::Ref(reference)), .. }) = &theme.compiled_item
+        else {
+            panic!("themeのcompiled_itemが失われました");
+        };
+        assert_eq!(reference.id, crate::axml::THEME_TRANSLUCENT_NO_TITLE_BAR);
+    }
+
+    #[test]
+    fn splash_enabled_keeps_original_theme() {
+        let encoded = manifest_with_theme().encode_to_vec();
+        let patched = patch_manifest(&encoded, &HashMap::new(), 1, false, false).unwrap();
+        let decoded = XmlNode::decode(patched.as_slice()).unwrap();
+        let Some(xml_node::Node::Element(manifest)) = &decoded.node else {
+            panic!("manifest要素がありません");
+        };
+        let Some(xml_node::Node::Element(application)) = &manifest.child[0].node else {
+            panic!("application要素がありません");
+        };
+        let theme = application
+            .attribute
+            .iter()
+            .find(|a| a.name == "theme")
+            .expect("theme属性がありません");
+        assert_eq!(theme.value, "@style/AppTheme");
     }
 }

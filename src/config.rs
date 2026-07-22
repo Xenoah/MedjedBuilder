@@ -66,6 +66,7 @@ pub struct AppConfig {
     pub location: bool,
     pub notifications: bool,
     pub file_api: bool,
+    pub disable_splash: bool,
     pub status_bar_color: String,
     pub navigation_bar_color: String,
 }
@@ -90,6 +91,7 @@ impl Default for AppConfig {
             location: false,
             notifications: false,
             file_api: true,
+            disable_splash: false,
             status_bar_color: "#202124".into(),
             navigation_bar_color: "#000000".into(),
         }

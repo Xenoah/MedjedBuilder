@@ -202,7 +202,11 @@ impl BuilderApp {
                 ui.checkbox(&mut self.config.fullscreen, "全画面");
                 ui.checkbox(&mut self.config.keep_screen_on, "画面を消灯しない");
                 ui.checkbox(&mut self.config.open_external_links, "外部URLはブラウザで開く");
+                ui.checkbox(&mut self.config.disable_splash, "起動スプラッシュを表示しない");
             });
+            if self.config.disable_splash {
+                ui.small("起動時のシステムスプラッシュ（アイコン画面）と白画面フラッシュを表示しません。");
+            }
         });
 
         ui.add_space(8.0);

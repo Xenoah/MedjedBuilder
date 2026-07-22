@@ -86,6 +86,7 @@ fn write_signed_aab(
                 &replacements,
                 request.config.version_code,
                 request.config.allow_cleartext_http,
+                request.config.disable_splash,
             )?;
         }
         write_tracked(&mut writer, &mut digests, &name, &data)?;

@@ -55,6 +55,10 @@ class MainActivity : Activity() {
         config = assets.open("app.json").bufferedReader().use { JSONObject(it.readText()) }
         applyWindowOptions()
         webView = WebView(this)
+        if (config.optBoolean("disable_splash")) {
+            // 半透明テーマ利用時、ページ描画までWebViewの白背景が見えないようにする
+            webView.setBackgroundColor(Color.TRANSPARENT)
+        }
         setContentView(webView)
         configureWebView()
         val page = config.optString("start_page", "index.html")
@@ -63,10 +67,14 @@ class MainActivity : Activity() {
     }
 
     private fun applyWindowOptions() {
-        requestedOrientation = when (config.optString("orientation", "auto")) {
-            "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        // 半透明テーマ(スプラッシュ非表示)ではAndroid 8.0/8.1が固定向きを
+        // IllegalStateExceptionで拒否するため、失敗しても続行する
+        runCatching {
+            requestedOrientation = when (config.optString("orientation", "auto")) {
+                "portrait" -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                "landscape" -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
         }
         if (config.optBoolean("fullscreen")) {
             window.decorView.systemUiVisibility =

@@ -5,6 +5,12 @@ const RES_STRING_POOL_TYPE: u16 = 0x0001;
 const RES_XML_START_ELEMENT_TYPE: u16 = 0x0102;
 const UTF8_FLAG: u32 = 0x0000_0100;
 
+/// 起動スプラッシュ無効化に使うAndroidフレームワーク公開テーマ
+/// `@android:style/Theme.Translucent.NoTitleBar` のリソースID。
+/// 公開IDはAndroidの全バージョンで不変。半透明テーマのアクティビティには
+/// Android 12以降のシステムスプラッシュも旧来の起動プレビューも表示されない。
+pub const THEME_TRANSLUCENT_NO_TITLE_BAR: u32 = 0x0103_0010;
+
 #[derive(Debug)]
 struct StringPool {
     offset: usize,
@@ -25,6 +31,7 @@ pub fn patch_manifest(
     replacements: &HashMap<String, String>,
     version_code: u32,
     allow_cleartext_http: bool,
+    disable_splash: bool,
 ) -> Result<Vec<u8>> {
     if manifest.len() < 8 {
         bail!("AndroidManifest.xmlが短すぎます");
@@ -35,6 +42,7 @@ pub fn patch_manifest(
         .strings
         .iter()
         .position(|s| s == "usesCleartextTraffic");
+    let theme_index = pool.strings.iter().position(|s| s == "theme");
 
     let mut strings = pool.strings.clone();
     for value in &mut strings {
@@ -58,6 +66,11 @@ pub fn patch_manifest(
     }
     if let Some(index) = cleartext_index {
         patch_typed_attribute(&mut out, index as u32, u32::from(allow_cleartext_http))?;
+    }
+    if disable_splash {
+        if let Some(index) = theme_index {
+            patch_typed_attribute(&mut out, index as u32, THEME_TRANSLUCENT_NO_TITLE_BAR)?;
+        }
     }
     Ok(out)
 }

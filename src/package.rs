@@ -94,6 +94,7 @@ fn write_unsigned_apk(
                 &replacements,
                 request.config.version_code,
                 request.config.allow_cleartext_http,
+                request.config.disable_splash,
             )?;
         }
         let compression = if name == "resources.arsc" || name.starts_with("lib/") {
