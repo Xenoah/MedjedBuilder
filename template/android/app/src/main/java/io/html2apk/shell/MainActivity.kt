@@ -80,6 +80,8 @@ class MainActivity : Activity() {
     private fun buildRootLayout(): View {
         val root = android.widget.LinearLayout(this)
         root.orientation = android.widget.LinearLayout.VERTICAL
+        // どの隙間からも壁紙や白背景が透けないよう、ルートは不透明の黒で塗る
+        root.setBackgroundColor(Color.BLACK)
         val statusPad = View(this).apply { setBackgroundColor(statusBarColor) }
         val navPad = View(this).apply { setBackgroundColor(navigationBarColor) }
         val match = android.widget.LinearLayout.LayoutParams.MATCH_PARENT
@@ -112,7 +114,16 @@ class MainActivity : Activity() {
             root.setPadding(left, 0, right, 0)
             statusPad.requestLayout()
             navPad.requestLayout()
-            insets
+            // インセットはここで消費し、WebViewへは渡さない。
+            // 渡すと新しいChromiumがエッジtoエッジ対応として自分でも
+            // ページを同じ分だけ縮め、二重の余白と背景の透け
+            // (=白いバーに見える) が発生する。
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.view.WindowInsets.CONSUMED
+            } else {
+                @Suppress("DEPRECATION")
+                insets.consumeSystemWindowInsets()
+            }
         }
         return root
     }
