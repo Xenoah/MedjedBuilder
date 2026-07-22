@@ -28,8 +28,20 @@ jobs:
       - name: Install templates
         shell: pwsh
         run: |
-          Copy-Item template/android/app/build/outputs/apk/release/app-release-unsigned.apk template/template.apk
+          # リソース最適化タスクの無効化で出力APK名が変わることがあるため、名前に依存せずコピーする
+          $apkDir = "template/android/app/build/outputs/apk/release"
+          Get-ChildItem $apkDir | ForEach-Object { Write-Host "found: $($_.Name)" }
+          $apk = Get-ChildItem "$apkDir/*.apk" | Select-Object -First 1
+          if (-not $apk) { throw "release APK not found in $apkDir" }
+          Copy-Item $apk.FullName template/template.apk
           Copy-Item template/android/app/build/outputs/bundle/release/app-release.aab template/template.aab
+          # アイコン差し替えが機能する前提条件 (icon_payload.png のパスが短縮されていないこと) を検証
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path template/template.apk))
+          $icons = @($zip.Entries | Where-Object { $_.FullName -like "*icon_payload.png" })
+          $zip.Dispose()
+          Write-Host "icon entries in template.apk: $($icons.Count)"
+          if ($icons.Count -lt 5) { throw "icon_payload.png entries missing in template.apk (resource path shortening still active?)" }
 
       - uses: dtolnay/rust-toolchain@stable
 
