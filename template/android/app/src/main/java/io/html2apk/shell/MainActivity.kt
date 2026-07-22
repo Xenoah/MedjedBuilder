@@ -131,6 +131,16 @@ class MainActivity : Activity() {
             flags = flags or View.SYSTEM_UI_FLAG_FULLSCREEN or
                 View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
         }
+        // 全バージョンで明示的にエッジtoエッジ化する。バー自体は完全透明にし、
+        // バー領域の背景はインセット追従のパディングビュー(設定色)で描画する。
+        // OSバージョンやOEM(MIUI等)がnavigationBarColor指定を無視・上書きしても
+        // 「システムは何も描かない」ため、バーが白くなる問題が原理的に起きない。
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+        } else {
+            flags = flags or View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        }
         // バー背景色の輝度に合わせてバーアイコンの明暗を切り替える
         // (暗色バーで黒アイコンのまま視認できなくなるのを防ぐ)
         flags = if (Color.luminance(statusBarColor) > 0.5f) {
@@ -149,14 +159,19 @@ class MainActivity : Activity() {
         if (config.optBoolean("keep_screen_on")) {
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        runCatching { window.statusBarColor = statusBarColor }
-        runCatching { window.navigationBarColor = navigationBarColor }
+        runCatching { window.statusBarColor = Color.TRANSPARENT }
+        runCatching { window.navigationBarColor = Color.TRANSPARENT }
         if (Build.VERSION.SDK_INT >= 29) {
-            // Android 15 (targetSdk 35) ではバー色の設定が無効化され、透明バーに
-            // 白っぽいコントラストスクリムが強制されて「白いバー」に見える。
-            // バー領域はパディングビューを設定色で塗るため、スクリムは無効にする。
+            // 透明バーへの白っぽいコントラストスクリム強制を無効化する
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= 28) {
+            // ノッチ/パンチホール領域にも背景を描画する
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
     }
 
