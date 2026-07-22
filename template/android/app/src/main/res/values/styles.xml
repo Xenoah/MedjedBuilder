@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+    <!-- 起動直後の白フラッシュや白いバー背景を避けるためダークベースにする。
+         バーアイコンの明暗は設定色の輝度からMainActivityが実行時に切り替える。 -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:colorAccent">#3F51B5</item>
+        <item name="android:windowBackground">#101418</item>
+        <item name="android:navigationBarColor">#000000</item>
+        <item name="android:statusBarColor">#202124</item>
     </style>
 </resources>
-

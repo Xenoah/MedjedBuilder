@@ -151,6 +151,13 @@ class MainActivity : Activity() {
         }
         runCatching { window.statusBarColor = statusBarColor }
         runCatching { window.navigationBarColor = navigationBarColor }
+        if (Build.VERSION.SDK_INT >= 29) {
+            // Android 15 (targetSdk 35) ではバー色の設定が無効化され、透明バーに
+            // 白っぽいコントラストスクリムが強制されて「白いバー」に見える。
+            // バー領域はパディングビューを設定色で塗るため、スクリムは無効にする。
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
     }
 
     @Suppress("SetJavaScriptEnabled")
